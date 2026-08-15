@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Login from './pages/Login'
 import Home from './pages/Home'
+import JobSearch from './pages/JobSearch'
+import Goals from './pages/Goals'
 import Sidebar from './components/Sidebar'
 import BottomTabBar from './components/BottomTabBar'
 import './theme.css'
@@ -25,6 +27,8 @@ export default function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/job-search" element={<JobSearch />} />
+            <Route path="/goals" element={<Goals />} />
           </Routes>
         </main>
         <BottomTabBar />
