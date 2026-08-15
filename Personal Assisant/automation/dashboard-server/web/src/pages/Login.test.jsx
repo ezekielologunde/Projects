@@ -27,7 +27,20 @@ describe('Login', () => {
     fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: 'wrong' } })
     fireEvent.click(screen.getByRole('button', { name: /unlock/i }))
 
-    await waitFor(() => expect(screen.getByText(/this device isn't recognized|incorrect/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/incorrect/i)).toBeInTheDocument())
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
+
+  it('shows an error and re-enables the button when the request rejects (network failure)', async () => {
+    global.fetch.mockRejectedValueOnce(new Error('network down'))
+    const onSuccess = vi.fn()
+    render(<Login onSuccess={onSuccess} />)
+
+    fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: 'wrong' } })
+    fireEvent.click(screen.getByRole('button', { name: /unlock/i }))
+
+    await waitFor(() => expect(screen.getByText(/incorrect/i)).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /unlock/i })).not.toBeDisabled()
     expect(onSuccess).not.toHaveBeenCalled()
   })
 })

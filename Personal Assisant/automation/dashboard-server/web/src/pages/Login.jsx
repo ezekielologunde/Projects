@@ -9,15 +9,20 @@ export default function Login({ onSuccess }) {
     e.preventDefault()
     setSubmitting(true)
     setError(false)
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
-    })
-    setSubmitting(false)
-    if (res.ok) {
-      onSuccess()
-    } else {
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      setSubmitting(false)
+      if (res.ok) {
+        onSuccess()
+      } else {
+        setError(true)
+      }
+    } catch (err) {
+      setSubmitting(false)
       setError(true)
     }
   }
