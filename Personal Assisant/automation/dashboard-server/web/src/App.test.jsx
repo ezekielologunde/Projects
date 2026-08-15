@@ -23,6 +23,15 @@ describe('App auth check', () => {
 
   it('renders the app shell when the auth check responds 200 OK', async () => {
     global.fetch.mockResolvedValueOnce({ ok: true, status: 200 })
+    global.fetch.mockResolvedValueOnce({
+      json: async () => ({
+        applications: [],
+        counts: {},
+        goals: [],
+        cyntraix: null,
+        research: null,
+      }),
+    })
     render(<App />)
 
     await waitFor(() => expect(screen.queryByText(/HoWz/i)).not.toBeInTheDocument())
