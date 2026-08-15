@@ -20,11 +20,14 @@ describe('ThemeToggle', () => {
   })
 
   it('clicking "Dark mode" sets data-theme to dark and persists to localStorage', () => {
+    localStorage.setItem('howz-theme', 'light')
     render(<ThemeToggle />)
+    expect(screen.getByRole('button', { name: 'Light mode' })).toHaveClass('on')
     fireEvent.click(screen.getByRole('button', { name: 'Dark mode' }))
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
     expect(localStorage.getItem('howz-theme')).toBe('dark')
     expect(screen.getByRole('button', { name: 'Dark mode' })).toHaveClass('on')
+    expect(screen.getByRole('button', { name: 'Light mode' })).not.toHaveClass('on')
   })
 
   it('clicking "Light mode" sets data-theme to light and persists to localStorage', () => {
