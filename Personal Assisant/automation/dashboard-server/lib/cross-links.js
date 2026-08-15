@@ -18,7 +18,7 @@ function textOf(item) {
     .toLowerCase()
 }
 
-export function findRelated(kind, id, data) {
+function findRelated(kind, id, data) {
   let source = null
   if (kind === 'application') source = (data.applications || []).find((a) => a.folder === id)
   if (kind === 'goal') source = (data.goals || []).find((g) => g.title === id)
@@ -49,3 +49,5 @@ export function findRelated(kind, id, data) {
 
   return results
 }
+
+module.exports = { findRelated }

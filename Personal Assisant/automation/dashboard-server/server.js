@@ -11,6 +11,8 @@ const fs = require("fs");
 const path = require("path");
 const url = require("url");
 const crypto = require("crypto");
+const { answerQuestion } = require("./lib/chatbot.js");
+const { findRelated } = require("./lib/cross-links.js");
 
 const PORT = 47832;
 const HOST = "0.0.0.0"; // LAN-reachable. Home routers don't forward this to the internet by default.
@@ -323,6 +325,22 @@ const server = http.createServer(async (req, res) => {
     const content = parsed.query.date ? safeReadDatedFile(DIRS.inbox, String(parsed.query.date)) : null;
     res.writeHead(content === null ? 404 : 200, { "Content-Type": "text/plain; charset=utf-8" });
     res.end(content === null ? "Not found" : content);
+    return;
+  }
+  if (pathname === "/api/chat" && req.method === "POST") {
+    const body = await readBody(req);
+    let question = "";
+    try { question = JSON.parse(body).question; } catch { /* ignore */ }
+    const result = answerQuestion(question, getDashboardData());
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(result));
+    return;
+  }
+  if (pathname === "/api/related") {
+    const { kind, id } = parsed.query;
+    const related = kind && id ? findRelated(String(kind), String(id), getDashboardData()) : [];
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ related }));
     return;
   }
 

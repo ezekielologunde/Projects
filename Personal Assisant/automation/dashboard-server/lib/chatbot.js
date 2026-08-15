@@ -45,7 +45,7 @@ const RULES = [
   },
 ]
 
-export function answerQuestion(question, data) {
+function answerQuestion(question, data) {
   const q = String(question || '').trim().toLowerCase()
   for (const rule of RULES) {
     if (rule.test(q)) {
@@ -54,3 +54,5 @@ export function answerQuestion(question, data) {
   }
   return { answer: '', matched: false }
 }
+
+module.exports = { answerQuestion }
