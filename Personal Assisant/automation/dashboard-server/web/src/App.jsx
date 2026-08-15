@@ -5,6 +5,9 @@ import Home from './pages/Home'
 import JobSearch from './pages/JobSearch'
 import Goals from './pages/Goals'
 import Money from './pages/Money'
+import Cyntraix from './pages/Cyntraix'
+import Research from './pages/Research'
+import Projects from './pages/Projects'
 import Sidebar from './components/Sidebar'
 import BottomTabBar from './components/BottomTabBar'
 import './theme.css'
@@ -31,6 +34,9 @@ export default function App() {
             <Route path="/job-search" element={<JobSearch />} />
             <Route path="/goals" element={<Goals />} />
             <Route path="/money" element={<Money />} />
+            <Route path="/cyntraix" element={<Cyntraix />} />
+            <Route path="/research" element={<Research />} />
+            <Route path="/projects" element={<Projects />} />
           </Routes>
         </main>
         <BottomTabBar />
