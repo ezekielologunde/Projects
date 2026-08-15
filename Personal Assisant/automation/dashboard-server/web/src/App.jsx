@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Home from './pages/Home'
 import JobSearch from './pages/JobSearch'
 import Goals from './pages/Goals'
+import Money from './pages/Money'
 import Sidebar from './components/Sidebar'
 import BottomTabBar from './components/BottomTabBar'
 import './theme.css'
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/job-search" element={<JobSearch />} />
             <Route path="/goals" element={<Goals />} />
+            <Route path="/money" element={<Money />} />
           </Routes>
         </main>
         <BottomTabBar />
