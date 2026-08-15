@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Login from './pages/Login'
+import Home from './pages/Home'
 import Sidebar from './components/Sidebar'
 import BottomTabBar from './components/BottomTabBar'
 import './theme.css'
@@ -23,7 +24,7 @@ export default function App() {
         <Sidebar />
         <main className="main-content">
           <Routes>
-            <Route path="/" element={<div>Home placeholder — Task 7</div>} />
+            <Route path="/" element={<Home />} />
           </Routes>
         </main>
         <BottomTabBar />
