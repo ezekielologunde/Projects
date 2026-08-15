@@ -37,7 +37,7 @@
 - [ ] **Step 1: Create the Vite project**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server"
 mkdir web
 cd web
 npm create vite@latest . -- --template react
@@ -94,7 +94,7 @@ const PUBLIC_DIR = path.join(__dirname, "web", "dist");
 - [ ] **Step 5: Build and verify the server serves it**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm run build
 cd ..
 node server.js
@@ -120,7 +120,7 @@ automation/dashboard-server/web/dist/
 - [ ] **Step 7: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/web/package.json automation/dashboard-server/web/vite.config.js automation/dashboard-server/web/index.html automation/dashboard-server/web/src/main.jsx automation/dashboard-server/web/src/App.jsx automation/dashboard-server/web/.gitignore automation/dashboard-server/server.js .gitignore
 git commit -m "chore: scaffold Vite+React app, point server at web/dist"
 ```
@@ -143,7 +143,7 @@ git commit -m "chore: scaffold Vite+React app, point server at web/dist"
 - [ ] **Step 1: Install test tooling**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm install -D vitest @testing-library/react @testing-library/jest-dom jsdom
 ```
 
@@ -217,7 +217,7 @@ describe('Login', () => {
 - [ ] **Step 3: Run test to verify it fails**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm test -- Login
 ```
 
@@ -286,7 +286,7 @@ Expected: PASS (2 tests).
 - [ ] **Step 6: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/web/package.json automation/dashboard-server/web/vitest.config.js automation/dashboard-server/web/src/test-setup.js automation/dashboard-server/web/src/pages/Login.jsx automation/dashboard-server/web/src/pages/Login.test.jsx
 git commit -m "feat: React login page with tests"
 ```
@@ -306,7 +306,7 @@ git commit -m "feat: React login page with tests"
 - [ ] **Step 1: Set up a test runner for the server side (separate from the `web/` frontend one)**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server"
 npm init -y
 npm install -D vitest
 ```
@@ -386,7 +386,7 @@ describe('answerQuestion', () => {
 - [ ] **Step 3: Run tests to verify they fail**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server"
 npm test
 ```
 
@@ -466,7 +466,7 @@ Expected: PASS (5 tests).
 - [ ] **Step 6: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/lib/chatbot.js automation/dashboard-server/lib/chatbot.test.js automation/dashboard-server/package.json
 git commit -m "feat: rule-based chatbot engine with tests"
 ```
@@ -521,7 +521,7 @@ describe('findRelated', () => {
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server"
 npm test -- cross-links
 ```
 
@@ -596,7 +596,7 @@ Expected: PASS (3 tests).
 - [ ] **Step 5: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/lib/cross-links.js automation/dashboard-server/lib/cross-links.test.js
 git commit -m "feat: cross-link engine with tests"
 ```
@@ -649,7 +649,7 @@ In `automation/dashboard-server/server.js`, inside the `---- API ----` block (af
 - [ ] **Step 3: Manually verify against the running server**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server"
 node server.js &
 sleep 1
 COOKIE=$(node -e "
@@ -668,7 +668,7 @@ Expected: a JSON body like `{"answer":"You have 13 application(s) staged for rev
 - [ ] **Step 4: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/server.js automation/dashboard-server/lib/chatbot.js automation/dashboard-server/lib/cross-links.js
 git commit -m "feat: wire chat and related-items endpoints into the server"
 ```
@@ -692,7 +692,7 @@ git commit -m "feat: wire chat and related-items endpoints into the server"
 - [ ] **Step 1: Install routing**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm install react-router-dom
 ```
 
@@ -879,7 +879,7 @@ export default function App() {
 - [ ] **Step 6: Verify it builds**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm run build
 ```
 
@@ -888,7 +888,7 @@ Expected: build succeeds with no errors.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/web/src/theme.css automation/dashboard-server/web/src/components/Sidebar.jsx automation/dashboard-server/web/src/components/BottomTabBar.jsx automation/dashboard-server/web/src/components/NavItems.js automation/dashboard-server/web/src/App.jsx automation/dashboard-server/web/package.json
 git commit -m "feat: design tokens, sidebar/bottom-tab-bar shell, auth gate"
 ```
@@ -941,7 +941,7 @@ describe('DetailPanel', () => {
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm test -- DetailPanel
 ```
 
@@ -1050,7 +1050,7 @@ Expected: PASS (2 tests).
 - [ ] **Step 7: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/web/src/hooks/useDashboardData.js automation/dashboard-server/web/src/components/Card.jsx automation/dashboard-server/web/src/components/DetailPanel.jsx automation/dashboard-server/web/src/components/DetailPanel.test.jsx
 git commit -m "feat: shared Card, DetailPanel (cross-linked drill-down), useDashboardData hook"
 ```
@@ -1102,7 +1102,7 @@ describe('pickHeroCandidate', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm test -- briefing
 ```
 
@@ -1242,7 +1242,7 @@ In `automation/dashboard-server/web/src/App.jsx`, add the import `import Home fr
 - [ ] **Step 10: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/web/src/pages/Home.jsx automation/dashboard-server/web/src/pages/Home.test.jsx automation/dashboard-server/web/src/lib/briefing.js automation/dashboard-server/web/src/lib/briefing.test.js automation/dashboard-server/web/src/App.jsx
 git commit -m "feat: Home page with tested briefing-priority logic"
 ```
@@ -1294,7 +1294,7 @@ describe('JobSearch', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm test -- JobSearch
 ```
 
@@ -1402,7 +1402,47 @@ export default function Goals() {
 }
 ```
 
-- [ ] **Step 6: Register both routes**
+- [ ] **Step 6: Write and pass a test for Goals (every page gets its own test — no exceptions, even for a structurally similar sibling)**
+
+Create `automation/dashboard-server/web/src/pages/Goals.test.jsx`:
+
+```jsx
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import Goals from './Goals'
+
+describe('Goals', () => {
+  beforeEach(() => {
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({
+        goals: [
+          { title: 'Finish DEng praxis', status: 'active', category: 'academic', notes: '', target_date: '2027-05-01' },
+          { title: 'Old goal', status: 'done', category: 'career', notes: '' },
+        ],
+      }),
+    })
+  })
+
+  it('filters to only active goals when that pill is clicked', async () => {
+    render(<Goals />)
+    await waitFor(() => expect(screen.getByText('Finish DEng praxis')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /^active$/i }))
+    expect(screen.getByText('Finish DEng praxis')).toBeInTheDocument()
+    expect(screen.queryByText('Old goal')).not.toBeInTheDocument()
+  })
+})
+```
+
+Run it:
+
+```bash
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
+npm test -- Goals
+```
+
+Expected: PASS (1 test).
+
+- [ ] **Step 7: Register both routes**
 
 In `automation/dashboard-server/web/src/App.jsx`, add imports for `JobSearch` and `Goals`, and add:
 
@@ -1411,12 +1451,12 @@ In `automation/dashboard-server/web/src/App.jsx`, add imports for `JobSearch` an
 <Route path="/goals" element={<Goals />} />
 ```
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
-git add automation/dashboard-server/web/src/pages/JobSearch.jsx automation/dashboard-server/web/src/pages/JobSearch.test.jsx automation/dashboard-server/web/src/pages/Goals.jsx automation/dashboard-server/web/src/App.jsx
-git commit -m "feat: Job search and Goals pages"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
+git add automation/dashboard-server/web/src/pages/JobSearch.jsx automation/dashboard-server/web/src/pages/JobSearch.test.jsx automation/dashboard-server/web/src/pages/Goals.jsx automation/dashboard-server/web/src/pages/Goals.test.jsx automation/dashboard-server/web/src/App.jsx
+git commit -m "feat: Job search and Goals pages, both with tests"
 ```
 
 ---
@@ -1472,7 +1512,7 @@ describe('Money', () => {
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm test -- Money
 ```
 
@@ -1575,7 +1615,7 @@ In `automation/dashboard-server/web/src/App.jsx`, add `import Money from './page
 - [ ] **Step 6: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/web/src/pages/Money.jsx automation/dashboard-server/web/src/pages/Money.test.jsx automation/dashboard-server/web/src/App.jsx
 git commit -m "feat: Money page"
 ```
@@ -1589,10 +1629,12 @@ git commit -m "feat: Money page"
 - Create: `automation/dashboard-server/web/src/pages/Research.jsx`
 - Create: `automation/dashboard-server/web/src/pages/Projects.jsx`
 - Create: `automation/dashboard-server/web/src/pages/Cyntraix.test.jsx`
+- Create: `automation/dashboard-server/web/src/pages/Research.test.jsx`
+- Create: `automation/dashboard-server/web/src/pages/Projects.test.jsx`
 - Modify: `automation/dashboard-server/web/src/App.jsx`
 
 **Interfaces:**
-- Consumes: `useDashboardData`, `Card`. These three pages share one shape in the current app (`app.js:render`'s `cyntraixList`/`researchList`/`projectsList` blocks: a static intro card, a list of items, an optional "still needs your input" card from `_meta.open_items`) — only `Cyntraix` gets a dedicated test; `Research`/`Projects` follow the identical, now-proven pattern (YAGNI on duplicate tests for a structurally identical shape, consistent with the Goals/JobSearch precedent in Task 9).
+- Consumes: `useDashboardData`, `Card`. These three pages share one shape in the current app (`app.js:render`'s `cyntraixList`/`researchList`/`projectsList` blocks: a static intro card, a list of items, an optional "still needs your input" card from `_meta.open_items`) — every page gets its own dedicated test regardless of shared shape (project-wide policy, confirmed 2026-08-15: no YAGNI exception for structurally similar pages).
 
 - [ ] **Step 1: Write the failing test for Cyntraix**
 
@@ -1624,7 +1666,7 @@ describe('Cyntraix', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm test -- Cyntraix
 ```
 
@@ -1707,6 +1749,43 @@ export default function Research() {
 }
 ```
 
+- [ ] **Step 5b: Write and pass a test for Research**
+
+Create `automation/dashboard-server/web/src/pages/Research.test.jsx`:
+
+```jsx
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import Research from './Research'
+
+describe('Research', () => {
+  it('renders the degree and the open-items card', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({
+        research: {
+          program: { degree: 'Doctor of Engineering', institution: 'GWU', location: 'Washington, DC', expected: '2027', status: 'in progress' },
+          research_areas: ['Zero Trust', 'AI/ML threat modeling'],
+          publications: null,
+          _meta: { open_items: ['Advisor name unconfirmed'] },
+        },
+      }),
+    })
+    render(<Research />)
+    await waitFor(() => expect(screen.getByText('Doctor of Engineering')).toBeInTheDocument())
+    expect(screen.getByText(/Advisor name unconfirmed/)).toBeInTheDocument()
+  })
+})
+```
+
+Run it:
+
+```bash
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
+npm test -- Research
+```
+
+Expected: PASS (1 test).
+
 - [ ] **Step 6: Implement Projects (same pattern, ported from `app.js:render`'s `projectsList` block)**
 
 Create `automation/dashboard-server/web/src/pages/Projects.jsx`:
@@ -1746,6 +1825,41 @@ export default function Projects() {
 }
 ```
 
+- [ ] **Step 6b: Write and pass a test for Projects**
+
+Create `automation/dashboard-server/web/src/pages/Projects.test.jsx`:
+
+```jsx
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import Projects from './Projects'
+
+describe('Projects', () => {
+  it('renders a project with its ownership label', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({
+        projectsRegistry: {
+          projects: [{ name: 'Preppa', type: 'food-marketplace app', ownership: 'own_venture', status: 'active', note: 'real order flow confirmed' }],
+          _meta: {},
+        },
+      }),
+    })
+    render(<Projects />)
+    await waitFor(() => expect(screen.getByText('Preppa')).toBeInTheDocument())
+    expect(screen.getByText('own venture')).toBeInTheDocument()
+  })
+})
+```
+
+Run it:
+
+```bash
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
+npm test -- Projects
+```
+
+Expected: PASS (1 test).
+
 - [ ] **Step 7: Register all three routes**
 
 In `automation/dashboard-server/web/src/App.jsx`, add imports and:
@@ -1759,9 +1873,9 @@ In `automation/dashboard-server/web/src/App.jsx`, add imports and:
 - [ ] **Step 8: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
-git add automation/dashboard-server/web/src/pages/Cyntraix.jsx automation/dashboard-server/web/src/pages/Cyntraix.test.jsx automation/dashboard-server/web/src/pages/Research.jsx automation/dashboard-server/web/src/pages/Projects.jsx automation/dashboard-server/web/src/App.jsx
-git commit -m "feat: Cyntraix, Research, Projects pages"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
+git add automation/dashboard-server/web/src/pages/Cyntraix.jsx automation/dashboard-server/web/src/pages/Cyntraix.test.jsx automation/dashboard-server/web/src/pages/Research.jsx automation/dashboard-server/web/src/pages/Research.test.jsx automation/dashboard-server/web/src/pages/Projects.jsx automation/dashboard-server/web/src/pages/Projects.test.jsx automation/dashboard-server/web/src/App.jsx
+git commit -m "feat: Cyntraix, Research, Projects pages, all with tests"
 ```
 
 ---
@@ -1810,7 +1924,7 @@ describe('DatedList', () => {
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm test -- DatedList
 ```
 
@@ -1934,7 +2048,7 @@ In `automation/dashboard-server/web/src/App.jsx`, add imports and:
 - [ ] **Step 7: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/web/src/components/DatedList.jsx automation/dashboard-server/web/src/components/DatedList.test.jsx automation/dashboard-server/web/src/pages/Inbox.jsx automation/dashboard-server/web/src/pages/News.jsx automation/dashboard-server/web/src/pages/Digests.jsx automation/dashboard-server/web/src/App.jsx
 git commit -m "feat: Inbox, News, Digests pages via shared DatedList"
 ```
@@ -1945,12 +2059,13 @@ git commit -m "feat: Inbox, News, Digests pages via shared DatedList"
 
 **Files:**
 - Create: `automation/dashboard-server/web/src/pages/Config.jsx`
+- Create: `automation/dashboard-server/web/src/pages/Config.test.jsx`
 - Modify: `automation/dashboard-server/web/src/App.jsx`
 
 **Interfaces:**
 - Consumes: `useDashboardData`. Reads `data.preferences` and `data.workAuth`, both already produced by `server.js`.
 
-- [ ] **Step 1: Implement (no dedicated test — a static read-only display of already-tested `data.preferences`/`data.workAuth`, no branching logic of its own worth a unit test; covered implicitly by the manual QA pass in Task 16)**
+- [ ] **Step 1: Implement**
 
 Create `automation/dashboard-server/web/src/pages/Config.jsx`:
 
@@ -1978,16 +2093,49 @@ export default function Config() {
 }
 ```
 
-- [ ] **Step 2: Register the route**
+- [ ] **Step 2: Write and pass a test for Config**
+
+Create `automation/dashboard-server/web/src/pages/Config.test.jsx`:
+
+```jsx
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import Config from './Config'
+
+describe('Config', () => {
+  it('renders max leads/day and work auth from preferences', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({
+        preferences: { max_new_applications_per_day: 5, target_roles: {} },
+        workAuth: 'STEM OPT',
+      }),
+    })
+    render(<Config />)
+    await waitFor(() => expect(screen.getByText('5')).toBeInTheDocument())
+    expect(screen.getByText('STEM OPT')).toBeInTheDocument()
+  })
+})
+```
+
+Run it:
+
+```bash
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
+npm test -- Config
+```
+
+Expected: PASS (1 test).
+
+- [ ] **Step 3: Register the route**
 
 In `automation/dashboard-server/web/src/App.jsx`, add `import Config from './pages/Config'` and `<Route path="/config" element={<Config />} />`.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
-git add automation/dashboard-server/web/src/pages/Config.jsx automation/dashboard-server/web/src/App.jsx
-git commit -m "feat: Config/Preferences page"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
+git add automation/dashboard-server/web/src/pages/Config.jsx automation/dashboard-server/web/src/pages/Config.test.jsx automation/dashboard-server/web/src/App.jsx
+git commit -m "feat: Config/Preferences page with test"
 ```
 
 ---
@@ -2051,7 +2199,7 @@ describe('ChatWidget', () => {
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm test -- ChatWidget
 ```
 
@@ -2135,7 +2283,7 @@ In `automation/dashboard-server/web/src/App.jsx`, import `ChatWidget` and render
 - [ ] **Step 6: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/web/src/components/ChatWidget.jsx automation/dashboard-server/web/src/components/ChatWidget.test.jsx automation/dashboard-server/web/src/App.jsx
 git commit -m "feat: persistent chat widget wired to /api/chat"
 ```
@@ -2180,7 +2328,7 @@ Append to `automation/dashboard-server/web/src/theme.css`:
 - [ ] **Step 2: Manually verify at both widths**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm run build
 cd ..
 node server.js
@@ -2191,7 +2339,7 @@ Open `http://127.0.0.1:47832` in a browser, log in, resize the window to below 7
 - [ ] **Step 3: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add automation/dashboard-server/web/src/theme.css
 git commit -m "feat: mobile responsive layout (bottom tab bar, chat panel repositioning)"
 ```
@@ -2234,7 +2382,7 @@ And update the auth-gate check a few lines below (`if (!PUBLIC_PATHS.has(pathnam
 - [ ] **Step 2: Delete the old vanilla files**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server"
 rm public/index.html public/app.js public/styles.css public/login.html public/login.js
 rmdir public 2>/dev/null || true
 ```
@@ -2242,7 +2390,7 @@ rmdir public 2>/dev/null || true
 - [ ] **Step 3: Full rebuild and manual QA pass**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server/web"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server/web"
 npm run build
 cd ..
 node server.js
@@ -2263,7 +2411,7 @@ Stop the server once every item is checked.
 - [ ] **Step 4: Run the full test suite one more time**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant/automation/dashboard-server"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant/automation/dashboard-server"
 npm test
 cd web
 npm test
@@ -2274,7 +2422,7 @@ Expected: all tests PASS in both the server (`chatbot`, `cross-links`) and web (
 - [ ] **Step 5: Commit**
 
 ```bash
-cd "C:/Users/WT8/Projects/Personal Assisant"
+cd "C:/Users/WT8/Projects/.claude/worktrees/dashboard-redesign/Personal Assisant"
 git add -A automation/dashboard-server
 git commit -m "chore: remove old vanilla frontend, finish server.js public-path cleanup"
 ```
@@ -2285,3 +2433,4 @@ git commit -m "chore: remove old vanilla frontend, finish server.js public-path 
 
 - **Spec coverage:** color-per-module → Task 6 (`theme.css`); motion → deferred detail (count-up/celebration animations use the same `requestAnimationFrame` approach as the old `app.js:countUp` — not re-specified step-by-step here since it's a direct, mechanical port with no new logic; add it as a small addendum task if a reviewer wants it broken out separately) — flagged here rather than silently dropped; mobile → Task 15; chatbot → Tasks 3, 5, 14; cross-linked drill-down → Tasks 4, 5, 7; React/Vite migration → Task 1; all pages → Tasks 8–13.
 - **Known gap:** the count-up number animation and the "celebration moment" (spec: "a small celebration moment when an application moves to interview, or a goal completes") are named in the spec's Interaction and layout section but not given their own task above — they're cosmetic additions to already-built pages (Home's stat chips, JobSearch/Goals status badges) rather than new architecture, and can be added as a follow-up pass after Task 16's QA confirms the functional base is solid. Do not skip silently — surface this to the user before considering the feature "done."
+- **Amendment 2026-08-15 (pre-flight review, before execution started):** the plan originally skipped dedicated tests for Goals, Research, Projects, and Config, reasoning they're structurally identical to already-tested siblings. User reviewed this and rejected the shortcut — every page now has its own test (Tasks 9, 11, 13 updated accordingly). Task reviewers should hold every page task to this bar; "structurally similar to a tested sibling" is not grounds to skip a test on this plan.
