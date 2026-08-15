@@ -243,7 +243,11 @@ function safeReadDatedFile(dir, date) {
 }
 
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json" };
-const PUBLIC_PATHS = new Set(["/login.html", "/login.js", "/styles.css"]);
+const PUBLIC_PATHS_PREFIXES = ["/assets/"]; // Vite's hashed build output
+function isPublicPath(pathname) {
+  if (pathname === "/" || pathname === "/index.html") return true;
+  return PUBLIC_PATHS_PREFIXES.some((p) => pathname.startsWith(p));
+}
 
 function readBody(req) {
   return new Promise((resolve) => {
@@ -285,7 +289,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ---- Auth gate (everything below requires a valid session) ----
-  if (!PUBLIC_PATHS.has(pathname) && !isAuthed(req)) {
+  if (!isPublicPath(pathname) && !isAuthed(req)) {
     if (pathname.startsWith("/api/")) {
       res.writeHead(401, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "unauthorized" }));

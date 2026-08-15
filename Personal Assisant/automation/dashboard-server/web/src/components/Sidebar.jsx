@@ -16,6 +16,7 @@ export default function Sidebar() {
           {item.label}
         </NavLink>
       ))}
+      <a href="/api/logout" className="nav-footer sign-out-link">Sign out</a>
     </nav>
   )
 }
