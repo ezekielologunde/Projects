@@ -13,14 +13,19 @@ export default function ChatWidget() {
     setMessages((m) => [...m, { from: 'me', text: q }])
     setQuestion('')
     setSending(true)
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q }),
-    })
-    const { answer, matched } = await res.json()
-    setSending(false)
-    setMessages((m) => [...m, { from: 'howz', text: matched ? answer : "I don't have an answer for that yet — I can only answer from what's actually on file." }])
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q }),
+      })
+      const { answer, matched } = await res.json()
+      setMessages((m) => [...m, { from: 'howz', text: matched ? answer : "I don't have an answer for that yet — I can only answer from what's actually on file." }])
+    } catch (err) {
+      setMessages((m) => [...m, { from: 'howz', text: "Something went wrong reaching HoWz — try again in a moment." }])
+    } finally {
+      setSending(false)
+    }
   }
 
   if (!open) {

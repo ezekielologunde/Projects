@@ -35,4 +35,16 @@ describe('ChatWidget', () => {
 
     await waitFor(() => expect(screen.getByText(/don't have an answer for that yet/i)).toBeInTheDocument())
   })
+
+  it('shows an error and re-enables the send button when the request rejects (network failure)', async () => {
+    global.fetch.mockRejectedValueOnce(new Error('network down'))
+    render(<ChatWidget />)
+
+    fireEvent.click(screen.getByRole('button', { name: /ask howz anything/i }))
+    fireEvent.change(screen.getByPlaceholderText(/ask howz/i), { target: { value: 'how many applications are staged?' } })
+    fireEvent.submit(screen.getByTestId('chat-form'))
+
+    await waitFor(() => expect(screen.getByText(/something went wrong/i)).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /send/i })).not.toBeDisabled()
+  })
 })
