@@ -1,16 +1,20 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Card from './Card'
 
 export default function DatedList({ items, title, fetchPath, emptyMessage }) {
   const [open, setOpen] = useState(null)
   const [content, setContent] = useState('')
+  const requestedDate = useRef(null)
 
   function openDate(date) {
+    requestedDate.current = date
     setOpen(date)
     setContent('loading…')
     fetch(`${fetchPath}?date=${encodeURIComponent(date)}`)
       .then((res) => res.text())
-      .then(setContent)
+      .then((text) => {
+        if (requestedDate.current === date) setContent(text)
+      })
   }
 
   if (!items.length) return <div className="empty">{emptyMessage}</div>
