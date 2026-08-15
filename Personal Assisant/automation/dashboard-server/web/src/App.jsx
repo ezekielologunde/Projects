@@ -9,7 +9,9 @@ export default function App() {
   const [authed, setAuthed] = useState(null) // null = checking, true/false once known
 
   useEffect(() => {
-    fetch('/api/dashboard').then((res) => setAuthed(res.status !== 401))
+    fetch('/api/dashboard')
+      .then((res) => setAuthed(res.ok))
+      .catch(() => setAuthed(false))
   }, [])
 
   if (authed === null) return null
