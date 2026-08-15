@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { NAV_ITEMS } from './NavItems'
+import ThemeToggle from './ThemeToggle'
 
 export default function Sidebar() {
   return (
@@ -16,7 +17,10 @@ export default function Sidebar() {
           {item.label}
         </NavLink>
       ))}
-      <a href="/api/logout" className="nav-footer sign-out-link">Sign out</a>
+      <div className="nav-footer">
+        <ThemeToggle />
+        <a href="/api/logout" className="sign-out-link">Sign out</a>
+      </div>
     </nav>
   )
 }
