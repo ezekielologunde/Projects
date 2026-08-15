@@ -10,7 +10,7 @@ REM The React frontend's build output isn't tracked in git (it's generated),
 REM so a fresh clone/merge has no dist\ yet. Build it once here if missing —
 REM subsequent launches skip this since dist\index.html will already exist.
 if not exist "%WEB_DIR%\dist\index.html" (
-  echo Building dashboard frontend for the first time — this only happens once...
+  echo Building dashboard frontend for the first time - this only happens once...
   pushd "%WEB_DIR%"
   call npm ci
   call npm run build

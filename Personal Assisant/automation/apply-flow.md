@@ -49,7 +49,7 @@ Only on explicit confirmation, for each approved job:
 
 Jobs left as `needs_manual_completion` are left exactly as-is (the browser tab can stay open) with a clear note in `apply-log.md` for the user to finish by hand. Never guess-submit these.
 
-The local dashboard (`automation\dashboard-server\`) reads its data live from disk on every page load — no rebuild step needed for data; the updated `status.json` files are reflected automatically next time the dashboard is open or refreshed. (The dashboard's own frontend code is separate and only needs a build when it changes — `open-dashboard.bat` handles that automatically.)
+The local dashboard (`automation\dashboard-server\`) reads its data live from disk on every page load — no rebuild step needed for data; the updated `status.json` files are reflected automatically next time the dashboard is open or refreshed. (The dashboard's own frontend code is separate — `open-dashboard.bat` only builds it once, if `web\dist\` is missing; it does not rebuild automatically after later frontend code changes.)
 
 ## Notes
 
