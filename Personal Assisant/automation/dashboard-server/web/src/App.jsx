@@ -8,6 +8,9 @@ import Money from './pages/Money'
 import Cyntraix from './pages/Cyntraix'
 import Research from './pages/Research'
 import Projects from './pages/Projects'
+import Inbox from './pages/Inbox'
+import News from './pages/News'
+import Digests from './pages/Digests'
 import Sidebar from './components/Sidebar'
 import BottomTabBar from './components/BottomTabBar'
 import './theme.css'
@@ -37,6 +40,9 @@ export default function App() {
             <Route path="/cyntraix" element={<Cyntraix />} />
             <Route path="/research" element={<Research />} />
             <Route path="/projects" element={<Projects />} />
+            <Route path="/inbox" element={<Inbox />} />
+            <Route path="/news" element={<News />} />
+            <Route path="/digests" element={<Digests />} />
           </Routes>
         </main>
         <BottomTabBar />
