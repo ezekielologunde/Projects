@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom'
 import { useDashboardData } from '../hooks/useDashboardData'
 import { pickHeroCandidate } from '../lib/briefing'
 import { NAV_ITEMS } from '../components/NavItems'
-import Card from '../components/Card'
+import StatCards from '../components/StatCards'
+import ActivityHeatmap from '../components/ActivityHeatmap'
 
 export default function Home() {
   const { data, loading } = useDashboardData()
@@ -18,6 +19,8 @@ export default function Home() {
         <p>{hero.blurb}</p>
       </section>
 
+      <StatCards counts={data.counts} trends={data.trends} />
+
       <div className="module-grid">
         {modules.map((m) => (
           <Link key={m.key} to={m.path} className="module-card" style={{ '--item-color': m.color }}>
@@ -25,6 +28,11 @@ export default function Home() {
           </Link>
         ))}
       </div>
+
+      <section className="activity-section">
+        <h2 className="page-subhead">Last 28 days</h2>
+        <ActivityHeatmap data={data} />
+      </section>
     </div>
   )
 }

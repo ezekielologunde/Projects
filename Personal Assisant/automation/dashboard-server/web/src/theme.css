@@ -24,6 +24,7 @@
 
   /* Semantic (not per-module) — used for error/warning states, e.g. login. */
   --danger: #e5484d;
+  --success: #34d399;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -241,6 +242,73 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
   outline: 2px solid rgba(255, 255, 255, .95);
   outline-offset: 3px;
 }
+
+/* ============================================================
+   Stat cards — per-status application counts with count-up motion
+   (see useCountUp.js) and day-over-day trend badges.
+   ============================================================ */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+.stat .num-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stat .num {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.stat .label {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: var(--muted);
+}
+.trend {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.trend.up {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+}
+.trend.down {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+/* ============================================================
+   Activity heatmap — 28-day grid of intensity cells.
+   ============================================================ */
+.heatmap {
+  display: grid;
+  grid-template-columns: repeat(14, 1fr);
+  gap: 6px;
+}
+.heatmap .cell {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: var(--line);
+  transition: transform .15s var(--ease-out);
+}
+.heatmap .cell:hover {
+  transform: scale(1.2);
+}
+.heatmap .cell[data-level="1"] { background: color-mix(in srgb, var(--c-home) 28%, var(--line)); }
+.heatmap .cell[data-level="2"] { background: color-mix(in srgb, var(--c-home) 52%, var(--line)); }
+.heatmap .cell[data-level="3"] { background: color-mix(in srgb, var(--c-home) 76%, var(--line)); }
+.heatmap .cell[data-level="4"] { background: var(--c-home); }
 
 /* ============================================================
    Card — the most-repeated interactive element in the app
@@ -712,6 +780,8 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 
   .hero { padding: 26px 22px; }
   .module-card { min-height: 90px; padding: 16px; font-size: 14px; }
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+  .heatmap { grid-template-columns: repeat(7, 1fr); }
   .detail-overlay { padding: 12px; align-items: flex-end; }
   .detail-panel { width: 100%; max-width: none; max-height: 85vh; padding: 24px 20px; }
   .login-card { padding: 32px 24px; }

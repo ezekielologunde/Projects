@@ -9,6 +9,7 @@ describe('Home', () => {
       json: async () => ({
         applications: [{ status: 'staged', folder: 'a', company: 'Acme', role: 'Analyst', found_at: '2026-08-15' }],
         counts: { staged: 1 },
+        trends: { staged: 1 },
         goals: [{ title: 'g', status: 'active', category: 'career' }],
         cyntraix: { clients: [] },
         research: null,
@@ -22,5 +23,12 @@ describe('Home', () => {
   it('renders the hero headline once data loads', async () => {
     render(<MemoryRouter><Home /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText(/ready to review/)).toBeInTheDocument())
+  })
+
+  it('renders the stat cards and activity heatmap alongside the hero and module grid', async () => {
+    render(<MemoryRouter><Home /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('staged')).toBeInTheDocument())
+    expect(screen.getByText('+1 today')).toBeInTheDocument()
+    expect(screen.getAllByTitle(/:/).length).toBe(28)
   })
 })
