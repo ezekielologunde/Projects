@@ -33,7 +33,7 @@ export default function Login({ onSuccess }) {
         <div className="login-logo">H</div>
         <h1>HoWz</h1>
         <p className="login-sub">Chief of Staff AI Assistant</p>
-        <p className="login-hint">{error ? 'incorrect password' : "this device isn't recognized yet"}</p>
+        <p className={`login-hint${error ? ' error' : ''}`}>{error ? 'incorrect password' : "this device isn't recognized yet"}</p>
         <input
           type="password"
           placeholder="password"

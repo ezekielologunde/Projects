@@ -12,7 +12,7 @@ export default function Cyntraix() {
       <h2>cyntraix business</h2>
       <Card title={`${c.business.name} — ${c.business.role}`} sub={`founded ${c.business.founded} · ${c.business.structure}`} />
       {c.clients.map((cl) => (
-        <Card key={cl.name} title={cl.name} badge={cl.status}>
+        <Card key={cl.name} title={cl.name} badge={<span className={cl.status === 'active' ? 'pulse' : undefined}>{cl.status}</span>}>
           {cl.cadence_note || ''}{cl.scope ? ` — scope: ${cl.scope}` : ''}
         </Card>
       ))}

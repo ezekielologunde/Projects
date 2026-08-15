@@ -21,6 +21,9 @@
   --c-news: #ffab5c;
   --c-digests: #5ce1e6;
   --c-config: #6f7a8c;
+
+  /* Semantic (not per-module) — used for error/warning states, e.g. login. */
+  --danger: #e5484d;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -50,6 +53,597 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
   padding: 20px;
 }
 
+/* ============================================================
+   Sidebar (desktop nav)
+   ============================================================ */
+.logo {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--c-home);
+  padding: 6px 12px 22px;
+}
+
+.nav-item {
+  display: block;
+  padding: 10px 12px;
+  margin-bottom: 2px;
+  border-radius: var(--radius-md);
+  border-left: 3px solid transparent;
+  color: var(--ink);
+  font-weight: 500;
+  font-size: 14px;
+  text-decoration: none;
+  transition: background-color .18s var(--ease-out), border-color .18s var(--ease-out), color .18s var(--ease-out);
+}
+.nav-item:hover {
+  background: color-mix(in srgb, var(--item-color) 8%, transparent);
+  border-left-color: color-mix(in srgb, var(--item-color) 45%, transparent);
+}
+.nav-item.on {
+  background: color-mix(in srgb, var(--item-color) 12%, transparent);
+  border-left-color: var(--item-color);
+  color: var(--item-color);
+  font-weight: 700;
+}
+.nav-item:focus-visible {
+  outline: 2px solid var(--item-color);
+  outline-offset: -2px;
+}
+
+.nav-footer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.sign-out-link {
+  display: block;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+  transition: background-color .18s var(--ease-out), color .18s var(--ease-out);
+}
+.sign-out-link:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+/* ============================================================
+   Bottom tab bar (mobile nav)
+   ============================================================ */
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 100%;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color .18s var(--ease-out), background-color .18s var(--ease-out);
+}
+.tab-item:hover {
+  color: var(--item-color);
+}
+.tab-item.on {
+  color: var(--item-color);
+  background: color-mix(in srgb, var(--item-color) 10%, transparent);
+}
+.tab-item:focus-visible {
+  outline: 2px solid var(--item-color);
+  outline-offset: -2px;
+}
+
+/* ============================================================
+   Home page — hero banner + module color grid
+   ============================================================ */
+.home-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.hero {
+  background: linear-gradient(135deg, var(--c-home), var(--c-jobsearch));
+  color: #fff;
+  border-radius: var(--radius-lg);
+  padding: 36px 34px;
+  box-shadow: 0 16px 40px -18px color-mix(in srgb, var(--c-home) 60%, transparent);
+}
+.hero h1 {
+  margin: 0 0 10px;
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.hero p {
+  margin: 0;
+  max-width: 60ch;
+  font-size: 16px;
+  opacity: .92;
+}
+
+.module-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 110px;
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  /* Solid saturated fill (the "color field" system) with a consistent dark
+     scrim so white text stays legible even on the lightest module colors
+     (e.g. --c-research, --c-digests), not just the darker ones. */
+  background: linear-gradient(rgba(10, 12, 20, .16), rgba(10, 12, 20, .34)), var(--item-color);
+  color: #fff;
+  text-align: center;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 16px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+  box-shadow: 0 8px 20px -10px color-mix(in srgb, var(--item-color) 70%, transparent);
+  transition: transform .2s var(--ease-out), box-shadow .2s var(--ease-out);
+}
+.module-card:hover,
+.module-card:focus-visible {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 30px -10px color-mix(in srgb, var(--item-color) 60%, transparent);
+}
+.module-card:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, .95);
+  outline-offset: 3px;
+}
+
+/* ============================================================
+   Card — the most-repeated interactive element in the app
+   ============================================================ */
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.card-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--ink);
+}
+.card-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.card-badge {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+.card-body {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.card.clickable {
+  cursor: pointer;
+  transition: transform .18s var(--ease-out), box-shadow .18s var(--ease-out), border-color .18s var(--ease-out);
+}
+.card.clickable:hover,
+.card.clickable:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px -16px rgba(20, 22, 28, .3);
+  border-color: color-mix(in srgb, var(--ink) 18%, var(--line));
+}
+.card.clickable:focus-visible {
+  outline: 2px solid var(--c-home);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   Detail overlay — real floating panel, not an inline block.
+   Shared by DetailPanel.jsx and DatedList.jsx.
+   ============================================================ */
+.detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(20, 22, 28, .45);
+  animation: overlay-fade-in .2s var(--ease-out);
+}
+.detail-panel {
+  position: relative;
+  width: 90%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 28px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, .4);
+  font-size: 14px;
+  line-height: 1.5;
+  animation: panel-scale-in .22s var(--ease-out) .04s both;
+}
+.detail-panel h2 {
+  margin: 0 26px 4px 0;
+  font-size: 19px;
+  font-weight: 800;
+}
+.detail-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--line);
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color .15s var(--ease-out), transform .15s var(--ease-out);
+}
+.detail-close:hover {
+  background: color-mix(in srgb, var(--c-jobsearch) 18%, var(--line));
+  transform: rotate(90deg);
+}
+.detail-sub {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.detail-note {
+  margin: 0 0 16px;
+}
+.detail-related-head {
+  margin: 20px 0 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+}
+.detail-related-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.detail-related-kind {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--c-jobsearch) 14%, transparent);
+  color: var(--c-jobsearch);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.detail-related-label {
+  font-weight: 600;
+}
+.detail-related-sub {
+  color: var(--muted);
+}
+.detail-loading,
+.detail-empty {
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.detail-raw {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes panel-scale-in {
+  from { opacity: 0; transform: scale(.94) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ============================================================
+   Chat widget
+   ============================================================ */
+.chat-bubble {
+  box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--c-home) 65%, transparent);
+  transition: transform .18s var(--ease-out), box-shadow .18s var(--ease-out);
+}
+.chat-bubble:hover,
+.chat-bubble:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px -10px color-mix(in srgb, var(--c-home) 65%, transparent);
+}
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 700;
+}
+.chat-head button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color .15s var(--ease-out);
+}
+.chat-head button:hover {
+  color: var(--ink);
+}
+
+.chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+}
+.chat-msg {
+  max-width: 85%;
+  padding: 9px 13px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.chat-msg.me {
+  align-self: flex-end;
+  background: var(--c-home);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.chat-msg.howz {
+  align-self: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+.chat-input-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+  transition: border-color .15s var(--ease-out);
+}
+.chat-input-row input:focus {
+  outline: none;
+  border-color: var(--c-home);
+}
+.chat-input-row button {
+  padding: 9px 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--c-home);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform .15s var(--ease-out), opacity .15s var(--ease-out);
+}
+.chat-input-row button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.chat-input-row button:disabled {
+  opacity: .6;
+  cursor: default;
+}
+
+/* ============================================================
+   Login
+   ============================================================ */
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.login-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  max-width: 360px;
+  padding: 40px 36px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 30px 70px -24px rgba(20, 22, 28, .3);
+  text-align: center;
+  animation: panel-scale-in .3s var(--ease-out);
+}
+.login-logo {
+  width: 76px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--c-home) 14%, transparent);
+  color: var(--c-home);
+  font-size: 42px;
+  font-weight: 800;
+}
+.login-card h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+}
+.login-sub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.login-hint {
+  margin: 6px 0 20px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.login-hint.error {
+  color: var(--danger);
+  font-weight: 600;
+}
+.login-card input[type="password"] {
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+  transition: border-color .15s var(--ease-out);
+}
+.login-card input[type="password"]:focus {
+  outline: none;
+  border-color: var(--c-home);
+}
+.login-card button[type="submit"] {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--c-home);
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform .15s var(--ease-out), opacity .15s var(--ease-out);
+}
+.login-card button[type="submit"]:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.login-card button[type="submit"]:disabled {
+  opacity: .7;
+  cursor: default;
+}
+
+/* ============================================================
+   Shared page chrome (all ten content pages)
+   ============================================================ */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 720px;
+}
+.page > h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.page-subhead {
+  margin: 22px 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+}
+.page-subhead:first-of-type {
+  margin-top: 10px;
+}
+.empty {
+  padding: 16px 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.loading {
+  padding: 40px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.filter-pills button {
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .15s var(--ease-out), color .15s var(--ease-out), border-color .15s var(--ease-out), transform .15s var(--ease-out);
+}
+.filter-pills button:hover {
+  border-color: color-mix(in srgb, var(--ink) 30%, var(--line));
+  transform: translateY(-1px);
+}
+.filter-pills button.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+
+/* ============================================================
+   Motion utility — reusable "live" indicator.
+   Applied only to genuinely-live states (interview status,
+   active Cyntraix client) — not broadly, so it stays meaningful.
+   ============================================================ */
+.pulse {
+  display: inline-block;
+  animation: pulse-soft 2.4s var(--ease-out) infinite;
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .55; transform: scale(1.05); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
@@ -73,4 +667,10 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
   .module-grid { grid-template-columns: 1fr 1fr; }
   .chat-panel { left: 12px; right: 12px; bottom: 76px; width: auto; max-height: 60vh; }
   .chat-bubble { bottom: 76px; }
+
+  .hero { padding: 26px 22px; }
+  .module-card { min-height: 90px; padding: 16px; font-size: 14px; }
+  .detail-overlay { padding: 12px; align-items: flex-end; }
+  .detail-panel { width: 100%; max-width: none; max-height: 85vh; padding: 24px 20px; }
+  .login-card { padding: 32px 24px; }
 }

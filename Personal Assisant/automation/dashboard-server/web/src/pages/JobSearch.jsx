@@ -24,7 +24,7 @@ export default function JobSearch() {
       </div>
       <div className="page-list">
         {filtered.map((a) => (
-          <Card key={a.folder} title={a.company} sub={a.role} badge={a.status.replace(/_/g, ' ')} onClick={() => setOpen(a)}>
+          <Card key={a.folder} title={a.company} sub={a.role} badge={<span className={a.status === 'interview' ? 'pulse' : undefined}>{a.status.replace(/_/g, ' ')}</span>} onClick={() => setOpen(a)}>
             found {a.found_at}{a.notes ? ` — ${a.notes}` : ''}
           </Card>
         ))}

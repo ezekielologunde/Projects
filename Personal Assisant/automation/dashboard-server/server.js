@@ -242,7 +242,7 @@ function safeReadDatedFile(dir, date) {
   try { return fs.readFileSync(p, "utf-8"); } catch { return null; }
 }
 
-const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json" };
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
 const PUBLIC_PATHS_PREFIXES = ["/assets/"]; // Vite's hashed build output
 function isPublicPath(pathname) {
   if (pathname === "/" || pathname === "/index.html") return true;
