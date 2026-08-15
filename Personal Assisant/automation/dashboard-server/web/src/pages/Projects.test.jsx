@@ -7,13 +7,13 @@ describe('Projects', () => {
     global.fetch = vi.fn().mockResolvedValue({
       json: async () => ({
         projectsRegistry: {
-          projects: [{ name: 'Preppa', type: 'food-marketplace app', ownership: 'own_venture', status: 'active', note: 'real order flow confirmed' }],
+          projects: [{ name: 'Project Alpha', type: 'food-marketplace app', ownership: 'own_venture', status: 'active', note: 'real order flow confirmed' }],
           _meta: {},
         },
       }),
     })
     render(<Projects />)
-    await waitFor(() => expect(screen.getByText('Preppa')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Project Alpha')).toBeInTheDocument())
     expect(screen.getByText('own venture')).toBeInTheDocument()
   })
 })

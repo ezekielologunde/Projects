@@ -8,13 +8,13 @@ describe('Cyntraix', () => {
       json: async () => ({
         cyntraix: {
           business: { name: 'Cyntraix', role: 'Founder', founded: '2025-01', structure: 'AL LLC' },
-          clients: [{ name: 'King Health Systems', status: 'active', cadence_note: 'weekly timesheet' }],
+          clients: [{ name: 'Client A', status: 'active', cadence_note: 'weekly timesheet' }],
           _meta: { open_items: ['Rate not on file'] },
         },
       }),
     })
     render(<Cyntraix />)
-    await waitFor(() => expect(screen.getByText('King Health Systems')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Client A')).toBeInTheDocument())
     expect(screen.getByText(/Rate not on file/)).toBeInTheDocument()
   })
 })

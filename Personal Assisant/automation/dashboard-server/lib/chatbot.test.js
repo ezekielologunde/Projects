@@ -11,12 +11,12 @@ const sampleData = {
   finances: {
     accounts: [
       {
-        institution: 'Discover Card',
-        last4: '7921',
-        latest_statement: { balance: 2396.63, minimum_payment: 76, minimum_payment_due: '2026-09-01' },
+        institution: 'Example Bank',
+        last4: '0000',
+        latest_statement: { balance: 1234.56, minimum_payment: 45, minimum_payment_due: '2026-09-01' },
       },
     ],
-    recurring_payments: [{ payee: 'Christ Apostolic Church Salvation Centre', amount: 10, cadence: 'recurring' }],
+    recurring_payments: [{ payee: 'Example Recurring Payee', amount: 10, cadence: 'recurring' }],
   },
   paymentsDueSoon: [],
   goals: [
@@ -36,8 +36,8 @@ describe('answerQuestion', () => {
   it('answers what the minimum payment due is', () => {
     const { answer, matched } = answerQuestion('what is my minimum payment due?', sampleData)
     expect(matched).toBe(true)
-    expect(answer).toContain('Discover Card')
-    expect(answer).toContain('76')
+    expect(answer).toContain('Example Bank')
+    expect(answer).toContain('45')
   })
 
   it('answers how many active goals exist', () => {

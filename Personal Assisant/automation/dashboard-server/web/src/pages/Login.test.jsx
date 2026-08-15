@@ -12,7 +12,7 @@ describe('Login', () => {
     const onSuccess = vi.fn()
     render(<Login onSuccess={onSuccess} />)
 
-    fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: 'cyntraix-orbit-7291' } })
+    fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: 'test-password-123' } })
     fireEvent.click(screen.getByRole('button', { name: /unlock/i }))
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))

@@ -18,14 +18,14 @@ describe('Money', () => {
     global.fetch = vi.fn().mockResolvedValue({
       json: async () => ({
         finances: {
-          accounts: [{ institution: 'Discover Card', last4: '7921', type: 'credit_card', owner_account: 'x@y.com', latest_statement: { balance: 2396.63, minimum_payment: 76, minimum_payment_due: '2026-09-01' }, note: '' }],
+          accounts: [{ institution: 'Example Bank', last4: '0000', type: 'credit_card', owner_account: 'x@y.com', latest_statement: { balance: 1234.56, minimum_payment: 45, minimum_payment_due: '2026-09-01' }, note: '' }],
           recurring_payments: [], one_off_transactions_seen: [],
         },
         paymentsDueSoon: [],
       }),
     })
     render(<Money />)
-    await waitFor(() => expect(screen.getByText('Discover Card')).toBeInTheDocument())
-    expect(screen.getByText('$2396.63')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Example Bank')).toBeInTheDocument())
+    expect(screen.getByText('$1234.56')).toBeInTheDocument()
   })
 })

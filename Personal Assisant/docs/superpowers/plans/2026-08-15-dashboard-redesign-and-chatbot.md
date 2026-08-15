@@ -13,7 +13,7 @@
 - No external LLM/API call anywhere in the chatbot — pattern-matching over local JSON only (spec: "Chatbot mechanism — confirmed").
 - Nothing the dashboard does may submit, send, or act on the user's behalf — read/review only (spec: "Must stay").
 - Must keep working as password-gated, LAN-only (`0.0.0.0:47832`), no public-internet exposure requirement or plan (spec: "Anti-goal").
-- Every number/status shown must trace to a real file already on disk — no fabricated or sample data anywhere, including in tests (use realistic fixtures shaped like the real files, never invented business facts) (PRODUCT.md: "Product Principles" #1).
+- Every number/status shown must trace to a real file already on disk — no fabricated or sample data anywhere in the running app (PRODUCT.md: "Product Principles" #1). In tests and example fixtures, use realistic-*shaped* but entirely fabricated data — never copy real personal, financial, or business facts into example/test code, even when it's technically accurate.
 - Respect `prefers-reduced-motion` for all new motion (spec: "Interaction and layout").
 - Money page must not visually imply completeness `finances.json` doesn't have — its own `_meta` already documents this as a partial capture (spec: "States and ranges").
 
@@ -193,7 +193,7 @@ describe('Login', () => {
     const onSuccess = vi.fn()
     render(<Login onSuccess={onSuccess} />)
 
-    fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: 'cyntraix-orbit-7291' } })
+    fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: 'test-password-123' } })
     fireEvent.click(screen.getByRole('button', { name: /unlock/i }))
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
@@ -335,12 +335,12 @@ const sampleData = {
   finances: {
     accounts: [
       {
-        institution: 'Discover Card',
-        last4: '7921',
-        latest_statement: { balance: 2396.63, minimum_payment: 76, minimum_payment_due: '2026-09-01' },
+        institution: 'Example Bank',
+        last4: '0000',
+        latest_statement: { balance: 1234.56, minimum_payment: 45, minimum_payment_due: '2026-09-01' },
       },
     ],
-    recurring_payments: [{ payee: 'Christ Apostolic Church Salvation Centre', amount: 10, cadence: 'recurring' }],
+    recurring_payments: [{ payee: 'Example Recurring Payee', amount: 10, cadence: 'recurring' }],
   },
   paymentsDueSoon: [],
   goals: [
@@ -360,8 +360,8 @@ describe('answerQuestion', () => {
   it('answers what the minimum payment due is', () => {
     const { answer, matched } = answerQuestion('what is my minimum payment due?', sampleData)
     expect(matched).toBe(true)
-    expect(answer).toContain('Discover Card')
-    expect(answer).toContain('76')
+    expect(answer).toContain('Example Bank')
+    expect(answer).toContain('45')
   })
 
   it('answers how many active goals exist', () => {
@@ -1496,15 +1496,15 @@ describe('Money', () => {
     global.fetch = vi.fn().mockResolvedValue({
       json: async () => ({
         finances: {
-          accounts: [{ institution: 'Discover Card', last4: '7921', type: 'credit_card', owner_account: 'x@y.com', latest_statement: { balance: 2396.63, minimum_payment: 76, minimum_payment_due: '2026-09-01' }, note: '' }],
+          accounts: [{ institution: 'Example Bank', last4: '0000', type: 'credit_card', owner_account: 'x@y.com', latest_statement: { balance: 1234.56, minimum_payment: 45, minimum_payment_due: '2026-09-01' }, note: '' }],
           recurring_payments: [], one_off_transactions_seen: [],
         },
         paymentsDueSoon: [],
       }),
     })
     render(<Money />)
-    await waitFor(() => expect(screen.getByText('Discover Card')).toBeInTheDocument())
-    expect(screen.getByText('$2396.63')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Example Bank')).toBeInTheDocument())
+    expect(screen.getByText('$1234.56')).toBeInTheDocument()
   })
 })
 ```
@@ -1651,13 +1651,13 @@ describe('Cyntraix', () => {
       json: async () => ({
         cyntraix: {
           business: { name: 'Cyntraix', role: 'Founder', founded: '2025-01', structure: 'AL LLC' },
-          clients: [{ name: 'King Health Systems', status: 'active', cadence_note: 'weekly timesheet' }],
+          clients: [{ name: 'Client A', status: 'active', cadence_note: 'weekly timesheet' }],
           _meta: { open_items: ['Rate not on file'] },
         },
       }),
     })
     render(<Cyntraix />)
-    await waitFor(() => expect(screen.getByText('King Health Systems')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Client A')).toBeInTheDocument())
     expect(screen.getByText(/Rate not on file/)).toBeInTheDocument()
   })
 })
@@ -1868,13 +1868,13 @@ describe('Projects', () => {
     global.fetch = vi.fn().mockResolvedValue({
       json: async () => ({
         projectsRegistry: {
-          projects: [{ name: 'Preppa', type: 'food-marketplace app', ownership: 'own_venture', status: 'active', note: 'real order flow confirmed' }],
+          projects: [{ name: 'Project Alpha', type: 'food-marketplace app', ownership: 'own_venture', status: 'active', note: 'real order flow confirmed' }],
           _meta: {},
         },
       }),
     })
     render(<Projects />)
-    await waitFor(() => expect(screen.getByText('Preppa')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Project Alpha')).toBeInTheDocument())
     expect(screen.getByText('own venture')).toBeInTheDocument()
   })
 })
