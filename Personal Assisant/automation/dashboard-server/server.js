@@ -353,7 +353,21 @@ const server = http.createServer(async (req, res) => {
   filePath = path.join(PUBLIC_DIR, filePath);
   if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); res.end("Forbidden"); return; }
   fs.readFile(filePath, (err, content) => {
-    if (err) { res.writeHead(404); res.end("Not found"); return; }
+    if (err) {
+      // SPA fallback: a client-side route (e.g. /job-search) has no file on
+      // disk but should still render the app so React Router can take over.
+      // Only fall back for extensionless paths — a missing static asset
+      // (e.g. /assets/missing-file.js) should still 404.
+      if (!path.extname(pathname)) {
+        fs.readFile(path.join(PUBLIC_DIR, "/index.html"), (err2, indexContent) => {
+          if (err2) { res.writeHead(404); res.end("Not found"); return; }
+          res.writeHead(200, { "Content-Type": MIME[".html"] });
+          res.end(indexContent);
+        });
+        return;
+      }
+      res.writeHead(404); res.end("Not found"); return;
+    }
     const ext = path.extname(filePath);
     res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream" });
     res.end(content);
