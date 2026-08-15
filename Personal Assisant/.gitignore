@@ -24,3 +24,6 @@ node_modules/
 
 # Subagent-driven-development scratch state (progress ledger, review packages)
 .superpowers/
+
+automation/dashboard-server/web/node_modules/
+automation/dashboard-server/web/dist/

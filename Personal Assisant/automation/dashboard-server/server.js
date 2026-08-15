@@ -15,7 +15,7 @@ const crypto = require("crypto");
 const PORT = 47832;
 const HOST = "0.0.0.0"; // LAN-reachable. Home routers don't forward this to the internet by default.
 const ROOT = path.resolve(__dirname, "..", "..");
-const PUBLIC_DIR = path.join(__dirname, "public");
+const PUBLIC_DIR = path.join(__dirname, "web", "dist");
 const SESSION_COOKIE = "pa_session";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
