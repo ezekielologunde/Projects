@@ -14,6 +14,7 @@ import Digests from './pages/Digests'
 import Config from './pages/Config'
 import Sidebar from './components/Sidebar'
 import BottomTabBar from './components/BottomTabBar'
+import ChatWidget from './components/ChatWidget'
 import './theme.css'
 
 export default function App() {
@@ -48,6 +49,7 @@ export default function App() {
           </Routes>
         </main>
         <BottomTabBar />
+        <ChatWidget />
       </div>
     </BrowserRouter>
   )
