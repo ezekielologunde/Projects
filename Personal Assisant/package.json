@@ -1,0 +1,10 @@
+{
+  "name": "personal-assistant-job-automation",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "@azure/msal-node": "^5.5.0",
+    "docx": "^9.7.1",
+    "pst-extractor": "^1.12.0"
+  }
+}
