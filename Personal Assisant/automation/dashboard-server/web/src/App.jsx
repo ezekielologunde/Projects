@@ -11,6 +11,7 @@ import Projects from './pages/Projects'
 import Inbox from './pages/Inbox'
 import News from './pages/News'
 import Digests from './pages/Digests'
+import Config from './pages/Config'
 import Sidebar from './components/Sidebar'
 import BottomTabBar from './components/BottomTabBar'
 import './theme.css'
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="/inbox" element={<Inbox />} />
             <Route path="/news" element={<News />} />
             <Route path="/digests" element={<Digests />} />
+            <Route path="/config" element={<Config />} />
           </Routes>
         </main>
         <BottomTabBar />
