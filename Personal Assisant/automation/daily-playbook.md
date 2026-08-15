@@ -13,7 +13,7 @@ You are running as an unattended scheduled task for Ezekiel Ologunde's job-searc
 
 All paths below are absolute under `C:\Users\WT8\Projects\Personal Assisant\`. Always use full paths — never assume a working directory.
 
-Note: the local dashboard (`automation\dashboard-server\`) reads live from disk on every page load — there is no "rebuild" step. Just write the files correctly and the dashboard reflects them automatically next time it's open.
+Note: the local dashboard (`automation\dashboard-server\`) reads its data live from disk on every page load — there is no rebuild step for data changes. Just write the files correctly and the dashboard reflects them automatically next time it's open. (This is about the data only — the dashboard's own frontend code is a separate React app that needs `npm run build` when its own code changes, handled automatically by `open-dashboard.bat` if `web\dist\` is missing.)
 
 ## Step 0 — Load context
 
