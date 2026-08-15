@@ -4,10 +4,16 @@ export default function DetailPanel({ kind, id, title, sub, note, onClose }) {
   const [related, setRelated] = useState(null)
 
   useEffect(() => {
+    let ignore = false
     setRelated(null)
     fetch(`/api/related?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`)
       .then((res) => res.json())
-      .then((r) => setRelated(r.related))
+      .then((r) => {
+        if (!ignore) setRelated(r.related)
+      })
+    return () => {
+      ignore = true
+    }
   }, [kind, id])
 
   return (
