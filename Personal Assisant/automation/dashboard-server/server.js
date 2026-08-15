@@ -283,7 +283,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/api/logout") {
     const cookies = parseCookies(req);
     sessions.delete(cookies[SESSION_COOKIE]);
-    res.writeHead(302, { Location: "/login.html", "Set-Cookie": `${SESSION_COOKIE}=; Max-Age=0; Path=/` });
+    res.writeHead(302, { Location: "/", "Set-Cookie": `${SESSION_COOKIE}=; Max-Age=0; Path=/` });
     res.end();
     return;
   }
@@ -294,7 +294,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(401, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "unauthorized" }));
     } else {
-      res.writeHead(302, { Location: "/login.html" });
+      res.writeHead(302, { Location: "/" });
       res.end();
     }
     return;
