@@ -245,7 +245,7 @@ function safeReadDatedFile(dir, date) {
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
 const PUBLIC_PATHS_PREFIXES = ["/assets/"]; // Vite's hashed build output
 function isPublicPath(pathname) {
-  if (pathname === "/" || pathname === "/index.html") return true;
+  if (pathname === "/" || pathname === "/index.html" || pathname === "/favicon.svg") return true;
   return PUBLIC_PATHS_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
