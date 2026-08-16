@@ -13,8 +13,10 @@ export default function Sidebar() {
           end={item.path === '/'}
           className={({ isActive }) => `nav-item${isActive ? ' on' : ''}`}
           style={{ '--item-color': item.color }}
+          aria-label={item.label}
+          title={item.label}
         >
-          {item.label}
+          {item.icon}
         </NavLink>
       ))}
       <div className="nav-footer">

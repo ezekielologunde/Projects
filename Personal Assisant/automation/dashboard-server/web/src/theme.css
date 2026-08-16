@@ -58,24 +58,32 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
    Sidebar (desktop nav)
    ============================================================ */
 .logo {
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--c-home);
-  padding: 6px 12px 22px;
+  padding: 4px 0 18px;
+  width: 100%;
+  text-align: center;
 }
 
 .nav-item {
-  display: block;
-  padding: 10px 12px;
-  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 6px;
   border-radius: var(--radius-md);
   border-left: 3px solid transparent;
   color: var(--ink);
-  font-weight: 500;
-  font-size: 14px;
   text-decoration: none;
   transition: background-color .18s var(--ease-out), border-color .18s var(--ease-out), color .18s var(--ease-out);
+}
+.nav-item svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 .nav-item:hover {
   background: color-mix(in srgb, var(--item-color) 8%, transparent);
@@ -98,14 +106,16 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
   border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 10px;
 }
 .sign-out-link {
   display: block;
-  padding: 9px 12px;
+  padding: 8px 4px;
   border-radius: var(--radius-md);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 11px;
+  text-align: center;
   text-decoration: none;
   transition: background-color .18s var(--ease-out), color .18s var(--ease-out);
 }
@@ -759,7 +769,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 }
 
 .app-shell { display: flex; min-height: 100vh; }
-.sidebar { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; padding: 16px; border-right: 1px solid var(--line); }
+.sidebar { width: 76px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; padding: 16px 8px; border-right: 1px solid var(--line); }
 .main-content { flex: 1; padding: 24px; max-width: 100%; overflow-x: hidden; }
 .bottom-tab-bar { display: none; }
 
