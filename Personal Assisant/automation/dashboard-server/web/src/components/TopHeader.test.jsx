@@ -56,6 +56,26 @@ describe('TopHeader', () => {
     await waitFor(() => expect(screen.getByText('Good evening')).toBeInTheDocument())
   })
 
+  it('still shows an afternoon greeting one minute before the evening boundary (16:59)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 7, 15, 16, 59, 0)) // 4:59pm local -> still afternoon
+    mockDashboard({ firstName: null })
+
+    render(<TopHeader />)
+
+    await waitFor(() => expect(screen.getByText('Good afternoon')).toBeInTheDocument())
+  })
+
+  it('shows an evening greeting right at the 17:00 hour boundary', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 7, 15, 17, 0, 0)) // 5:00pm local -> evening starts exactly here
+    mockDashboard({ firstName: null })
+
+    render(<TopHeader />)
+
+    await waitFor(() => expect(screen.getByText('Good evening')).toBeInTheDocument())
+  })
+
   it('shows the correct aggregate "needs attention" count on the bell badge', async () => {
     mockDashboard({
       applications: [
@@ -76,6 +96,22 @@ describe('TopHeader', () => {
     // staged(2) + attention(2) + interview(2) + cyntraix open(2) + research open(1) + payments due(2) = 11
     await waitFor(() => expect(container.querySelector('.header-bell-badge')).toHaveTextContent('11'))
     expect(container.querySelector('.header-bell')).toHaveAttribute('aria-label', '11 items need attention')
+  })
+
+  it('uses singular "item"/"needs" (not "item need") when the count is exactly 1', async () => {
+    mockDashboard({
+      applications: [{ status: 'staged' }],
+      counts: {},
+      cyntraix: null,
+      research: null,
+      paymentsDueSoon: [],
+    })
+
+    const { container } = render(<TopHeader />)
+
+    await waitFor(() => expect(container.querySelector('.header-bell-badge')).toHaveTextContent('1'))
+    expect(container.querySelector('.header-bell')).toHaveAttribute('aria-label', '1 item needs attention')
+    expect(container.querySelector('.header-bell')).toHaveAttribute('title', '1 item needs attention')
   })
 
   it('renders the bell with no badge when nothing needs attention, without hiding the bell itself', async () => {

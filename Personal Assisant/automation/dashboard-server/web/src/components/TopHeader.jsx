@@ -97,7 +97,7 @@ export default function TopHeader() {
   const firstName = data?.firstName || null
   const greeting = firstName ? `${greetingForHour(new Date().getHours())}, ${firstName}` : greetingForHour(new Date().getHours())
   const count = needsAttentionCount(data)
-  const bellLabel = count > 0 ? `${count} item${count === 1 ? '' : 's'} need attention` : 'Nothing needs attention right now'
+  const bellLabel = count > 0 ? `${count} item${count === 1 ? '' : 's'} ${count === 1 ? 'needs' : 'need'} attention` : 'Nothing needs attention right now'
   const initial = firstName ? firstName.charAt(0).toUpperCase() : null
 
   return (
