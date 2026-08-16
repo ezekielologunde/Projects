@@ -4,6 +4,7 @@ import { pickHeroCandidate } from '../lib/briefing'
 import { NAV_ITEMS } from '../components/NavItems'
 import StatCards from '../components/StatCards'
 import ActivityBar from '../components/ActivityBar'
+import ActivityChart from '../components/ActivityChart'
 import ActivityHeatmap from '../components/ActivityHeatmap'
 
 export default function Home() {
@@ -23,6 +24,8 @@ export default function Home() {
       <StatCards counts={data.counts} trends={data.trends} />
 
       <ActivityBar applications={data.applications} />
+
+      <ActivityChart applications={data.applications} />
 
       <div className="module-grid">
         {modules.map((m) => (

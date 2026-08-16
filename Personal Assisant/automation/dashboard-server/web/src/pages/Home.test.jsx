@@ -39,4 +39,17 @@ describe('Home', () => {
     render(<MemoryRouter><Home /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('moved on')).toBeInTheDocument())
   })
+
+  it('renders the applications-over-time chart with its period selector', async () => {
+    const { container } = render(<MemoryRouter><Home /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Applications found')).toBeInTheDocument())
+    // Queried by class rather than getByRole('button', {name: 'this week'}) —
+    // that name is ambiguous while the default 7-day period is selected,
+    // since the matching option inside the (unopened) period menu carries
+    // the same accessible name as the trigger button.
+    expect(container.querySelector('.period-btn')).toHaveTextContent('this week')
+    // Bar tooltips end in "found", which doesn't collide with the heatmap's
+    // "item(s)"-suffixed tooltips asserted above.
+    expect(container.querySelectorAll('.barchart rect').length).toBeGreaterThan(0)
+  })
 })

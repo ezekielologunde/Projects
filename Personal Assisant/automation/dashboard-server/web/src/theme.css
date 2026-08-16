@@ -408,6 +408,104 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 .heatmap .cell[data-level="4"] { background: var(--c-home); }
 
 /* ============================================================
+   Activity chart — applications-found-per-day bar chart with a
+   this-week/last-2-weeks/this-month period selector.
+   ============================================================ */
+.activity-chart .card-head {
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.barchart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.barchart rect {
+  transition: height .3s var(--ease-out), y .3s var(--ease-out);
+}
+.chart-days {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.chart-days .on {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.period-select {
+  position: relative;
+  flex-shrink: 0;
+}
+.period-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .15s var(--ease-out), border-color .15s var(--ease-out);
+}
+.period-btn:hover {
+  border-color: color-mix(in srgb, var(--ink) 30%, var(--line));
+}
+.period-btn svg {
+  color: var(--muted);
+  transition: transform .2s var(--ease-out);
+}
+.period-select.open .period-btn svg {
+  transform: rotate(180deg);
+}
+.period-btn:focus-visible {
+  outline: 2px solid var(--c-home);
+  outline-offset: 2px;
+}
+.period-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 10;
+  display: none;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: 0 14px 30px -12px rgba(20, 22, 28, .3);
+}
+.period-select.open .period-menu {
+  display: flex;
+}
+.period-menu button {
+  padding: 7px 9px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color .15s var(--ease-out), color .15s var(--ease-out);
+}
+.period-menu button:hover {
+  background: color-mix(in srgb, var(--c-home) 12%, transparent);
+}
+.period-menu button.on {
+  color: var(--c-home);
+}
+
+/* ============================================================
    Card — the most-repeated interactive element in the app
    ============================================================ */
 .card-head {
