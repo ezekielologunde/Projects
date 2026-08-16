@@ -5,8 +5,31 @@
 // and applications/*/status.json today, and building one is out of scope.
 
 // Generic short words that would otherwise create noisy false-positive matches
-// now that tokenize() keeps words as short as 3 characters.
-const STOPWORDS = new Set(['the', 'and', 'for', 'are', 'was', 'not', 'but', 'has', 'had', 'you', 'his', 'her', 'its', 'llc', 'inc'])
+// now that tokenize() keeps words as short as 3 characters. Matching is plain
+// substring inclusion against an untokenized haystack (see findRelated below),
+// so any common English word left in here can silently link two unrelated
+// items just because both happen to contain it. This list is deliberately
+// broader than a "true" 3-4 letter word would need in isolation — it's tuned
+// against this app's actual text shape (job-application notes/status, goal
+// notes/category, account notes), not a generic English stopword corpus.
+// Short PROPER NOUNS (company/institution names like "Visa" or "Acme") are
+// intentionally NOT filtered here — case is not a usable signal since
+// tokenize() lowercases everything first, so the line we're drawing is
+// "common English word" vs. "name", approximated by hand.
+const STOPWORDS = new Set([
+  // original short connector/filler words
+  'the', 'and', 'for', 'are', 'was', 'not', 'but', 'has', 'had', 'you', 'his', 'her', 'its', 'llc', 'inc',
+  // domain false-positives flagged in review: generic nouns/verbs that show up
+  // constantly in this app's notes/status/category text (finance, job search,
+  // goals) without identifying anything
+  'plan', 'card', 'bank', 'note', 'pay', 'due', 'have', 'with', 'this', 'that', 'from',
+  // other common short articles/pronouns/prepositions/conjunctions/auxiliary
+  // verbs that are generic filler wherever they appear
+  'all', 'any', 'can', 'did', 'get', 'him', 'let', 'new', 'now', 'off', 'one', 'our', 'out', 'own',
+  'she', 'too', 'use', 'way', 'who', 'why', 'yet', 'your', 'they', 'them', 'then', 'than', 'when',
+  'what', 'will', 'were', 'each', 'more', 'most', 'some', 'such', 'only', 'also', 'into', 'over',
+  'need', 'still', 'just', 'like', 'both', 'here', 'there', 'been', 'being',
+])
 
 function tokenize(str) {
   return String(str || '')
@@ -61,8 +84,8 @@ function findRelated(kind, id, data) {
     for (const a of data.finances?.accounts || []) {
       const hay = textOfAccount(a)
       if ([...sourceTokens].some((t) => hay.includes(t))) {
-        const id = `${a.institution}${a.last4 || ''}`
-        results.push({ kind: 'account', id, label: a.institution, sub: (a.type || '').replace(/_/g, ' ') })
+        const acctId = `${a.institution}${a.last4 || ''}`
+        results.push({ kind: 'account', id: acctId, label: a.institution, sub: (a.type || '').replace(/_/g, ' ') })
       }
     }
   }
