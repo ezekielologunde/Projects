@@ -177,6 +177,130 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 }
 
 /* ============================================================
+   Top header — persistent bar above every routed page's content
+   (see App.jsx). Greeting on the left, bell + account menu on the
+   right.
+   ============================================================ */
+.top-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 22px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.header-greeting {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.header-greeting-sub {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.header-bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+.header-bell svg {
+  width: 19px;
+  height: 19px;
+}
+.header-bell-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.header-account {
+  position: relative;
+}
+.header-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: var(--c-home);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .15s var(--ease-out), box-shadow .15s var(--ease-out);
+}
+.header-avatar:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--c-home) 65%, transparent);
+}
+.header-avatar:focus-visible {
+  outline: 2px solid var(--c-home);
+  outline-offset: 2px;
+}
+.account-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 10;
+  display: none;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: 0 14px 30px -12px rgba(20, 22, 28, .3);
+}
+.account-menu.open {
+  display: flex;
+}
+.account-menu-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color .15s var(--ease-out);
+}
+.account-menu-item:hover {
+  background: color-mix(in srgb, var(--c-home) 12%, transparent);
+}
+
+/* ============================================================
    Bottom tab bar (mobile nav)
    ============================================================ */
 .tab-item {
@@ -972,6 +1096,13 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
   .module-grid { grid-template-columns: 1fr 1fr; }
   .chat-panel { left: 12px; right: 12px; bottom: 76px; width: auto; max-height: 60vh; }
   .chat-bubble { bottom: 76px; }
+
+  .top-header { padding-bottom: 16px; }
+  .header-greeting { font-size: 17px; }
+  .header-greeting-sub { display: none; } /* narrow screens keep just the greeting — the subtitle is nice-to-have, not essential */
+  .header-bell, .header-avatar { width: 34px; height: 34px; }
+  .header-bell svg { width: 17px; height: 17px; }
+  .header-actions { gap: 10px; }
 
   .hero { padding: 26px 22px; }
   .module-card { min-height: 90px; padding: 16px; font-size: 14px; }

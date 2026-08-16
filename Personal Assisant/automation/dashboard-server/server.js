@@ -204,6 +204,9 @@ function buildDashboardData() {
     connectedAccounts,
     paymentsDueSoon,
     workAuth: profile && profile.contact ? profile.contact.work_authorization : null,
+    // First name only, for the header greeting — deliberately not the full contact object,
+    // which also holds email/phone/address that the frontend has no reason to receive.
+    firstName: profile && profile.contact && profile.contact.name ? profile.contact.name.split(" ")[0] : null,
   };
 }
 

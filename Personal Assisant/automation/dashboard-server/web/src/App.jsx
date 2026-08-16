@@ -15,6 +15,7 @@ import Config from './pages/Config'
 import Sidebar from './components/Sidebar'
 import BottomTabBar from './components/BottomTabBar'
 import ChatWidget from './components/ChatWidget'
+import TopHeader from './components/TopHeader'
 import './theme.css'
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
       <div className="app-shell">
         <Sidebar />
         <main className="main-content">
+          <TopHeader />
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/job-search" element={<JobSearch />} />

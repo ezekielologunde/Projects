@@ -23,17 +23,23 @@ describe('App auth check', () => {
 
   it('renders the app shell when the auth check responds 200 OK', async () => {
     global.fetch.mockResolvedValueOnce({ ok: true, status: 200 })
-    global.fetch.mockResolvedValueOnce({
+    // mockResolvedValue (not Once) — the app shell mounts both TopHeader
+    // and Home, and each calls useDashboardData() independently (this
+    // app's per-component-fetch pattern, no shared data layer), so
+    // /api/dashboard gets fetched more than once after the auth check.
+    global.fetch.mockResolvedValue({
       json: async () => ({
         applications: [],
         counts: {},
         goals: [],
         cyntraix: null,
         research: null,
+        paymentsDueSoon: [],
+        firstName: null,
       }),
     })
     render(<App />)
 
-    await waitFor(() => expect(screen.queryByText(/HoWz/i)).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('HoWz')).not.toBeInTheDocument())
   })
 })

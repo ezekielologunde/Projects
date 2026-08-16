@@ -23,20 +23,14 @@ describe('Sidebar (icon-only desktop nav)', () => {
     }
   })
 
-  it('renders exactly one link per nav item plus the sign-out link', () => {
+  it('renders exactly one link per nav item, with no sign-out link (that control now lives in the top header\'s account menu)', () => {
     render(
       <MemoryRouter>
         <Sidebar />
       </MemoryRouter>
     )
 
-    expect(screen.getAllByRole('link')).toHaveLength(NAV_ITEMS.length + 1)
-
-    // Sign-out is icon-only, matching the rest of the icon-only sidebar —
-    // its label lives only in aria-label/title, same as the nav items above.
-    const signOutLink = screen.getByRole('link', { name: 'Sign out' })
-    expect(signOutLink).toBeInTheDocument()
-    expect(signOutLink).toHaveAttribute('title', 'Sign out')
-    expect(signOutLink.textContent).toBe('')
+    expect(screen.getAllByRole('link')).toHaveLength(NAV_ITEMS.length)
+    expect(screen.queryByRole('link', { name: 'Sign out' })).not.toBeInTheDocument()
   })
 })
