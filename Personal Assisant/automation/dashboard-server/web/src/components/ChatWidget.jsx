@@ -70,7 +70,6 @@ export default function ChatWidget() {
           placeholder="Ask HoWz…"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          disabled={sending}
         />
         <button type="submit" disabled={sending}>send</button>
       </form>

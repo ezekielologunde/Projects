@@ -65,6 +65,11 @@ describe('ChatWidget', () => {
 
     // Rapid second submit attempt (e.g. pressing Enter again) while the
     // first request is still in flight - must be a no-op, not a second fetch.
+    // Give the input a new non-empty value first so the pre-existing
+    // `!question.trim()` guard can't be what blocks this (the field was
+    // cleared after the first submit) - this isolates the `if (sending)
+    // return` guard as the only thing that can still block the resubmit.
+    fireEvent.change(screen.getByPlaceholderText(/ask howz/i), { target: { value: 'a different question' } })
     fireEvent.submit(screen.getByTestId('chat-form'))
     expect(global.fetch).toHaveBeenCalledTimes(1)
 
