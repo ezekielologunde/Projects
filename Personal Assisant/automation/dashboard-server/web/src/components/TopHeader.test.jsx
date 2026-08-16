@@ -144,11 +144,56 @@ describe('TopHeader', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Account menu' }))
     expect(container.querySelector('.account-menu')).toHaveClass('open')
 
-    const signOut = screen.getByRole('link', { name: 'Sign out' })
+    // Sign out is an <a href> given an explicit role="menuitem" for proper
+    // menu semantics, which overrides its implicit "link" role — so it's
+    // now queried by that role rather than 'link'.
+    const signOut = screen.getByRole('menuitem', { name: 'Sign out' })
     expect(signOut).toHaveAttribute('href', '/api/logout')
 
     fireEvent.click(document.body)
     expect(container.querySelector('.account-menu')).not.toHaveClass('open')
+  })
+
+  it('has aria-expanded="false" on the account trigger when closed and "true" when open', async () => {
+    mockDashboard({ firstName: 'Ezekiel' })
+
+    render(<TopHeader />)
+    const trigger = await screen.findByRole('button', { name: 'Account menu' })
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('closes the account menu when Escape is pressed', async () => {
+    mockDashboard({ firstName: 'Ezekiel' })
+
+    const { container } = render(<TopHeader />)
+    const trigger = await screen.findByRole('button', { name: 'Account menu' })
+
+    fireEvent.click(trigger)
+    expect(container.querySelector('.account-menu')).toHaveClass('open')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(container.querySelector('.account-menu')).not.toHaveClass('open')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('returns focus to the avatar trigger button when Escape closes the account menu', async () => {
+    mockDashboard({ firstName: 'Ezekiel' })
+
+    render(<TopHeader />)
+    const trigger = await screen.findByRole('button', { name: 'Account menu' })
+
+    fireEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(document.activeElement).toBe(trigger)
   })
 
   it('shows the first-name initial as the avatar when present', async () => {

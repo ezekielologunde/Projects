@@ -47,14 +47,20 @@ describe('ActivityChart', () => {
 
     const { container } = render(<ActivityChart applications={[]} />)
     expect(container.querySelectorAll('.barchart rect')).toHaveLength(7)
-    expect(container.querySelector('.period-btn')).toHaveTextContent('this week')
 
-    fireEvent.click(container.querySelector('.period-btn'))
-    fireEvent.click(screen.getByRole('button', { name: 'last 2 weeks' }))
+    // Previously this had to go through container.querySelector('.period-btn')
+    // to sidestep an accessible-name collision: the trigger and the
+    // period-7 option both read "this week", and both had an implicit
+    // role of "button". Now that the trigger keeps role="button" while
+    // options carry role="menuitem", getByRole('button', ...) resolves to
+    // the trigger alone.
+    const trigger = screen.getByRole('button', { name: 'this week' })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'last 2 weeks' }))
 
     expect(container.querySelectorAll('.barchart rect')).toHaveLength(14)
     expect(container.querySelectorAll('.chart-days span')).toHaveLength(14)
-    expect(container.querySelector('.period-btn')).toHaveTextContent('last 2 weeks')
+    expect(screen.getByRole('button', { name: 'last 2 weeks' })).toBeInTheDocument()
     // Selecting an option also closes the menu.
     expect(container.querySelector('.period-select')).not.toHaveClass('open')
   })
@@ -65,7 +71,7 @@ describe('ActivityChart', () => {
 
     const { container } = render(<ActivityChart applications={[]} />)
 
-    fireEvent.click(container.querySelector('.period-btn'))
+    fireEvent.click(screen.getByRole('button', { name: 'this week' }))
     expect(container.querySelector('.period-select')).toHaveClass('open')
 
     fireEvent.click(document.body)
@@ -82,13 +88,63 @@ describe('ActivityChart', () => {
     expect(labels).toHaveLength(7)
     expect(labels.every((l) => /^[A-Za-z]{3}$/.test(l))).toBe(true)
 
-    fireEvent.click(container.querySelector('.period-btn'))
-    fireEvent.click(screen.getByRole('button', { name: 'this month' }))
+    fireEvent.click(screen.getByRole('button', { name: 'this week' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'this month' }))
 
     labels = [...container.querySelectorAll('.chart-days span')].map((s) => s.textContent)
     expect(labels).toHaveLength(30)
     expect(labels.every((l) => /^\d{1,2}$/.test(l))).toBe(true)
     // The 30th (last/today) entry should be "15" — the day-of-month for Aug 15.
     expect(labels[labels.length - 1]).toBe('15')
+  })
+
+  it('has aria-expanded="false" on the trigger when closed and "true" when open', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0))
+
+    render(<ActivityChart applications={[]} />)
+
+    const trigger = screen.getByRole('button', { name: 'this week' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('closes the period menu when Escape is pressed', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0))
+
+    const { container } = render(<ActivityChart applications={[]} />)
+
+    const trigger = screen.getByRole('button', { name: 'this week' })
+    fireEvent.click(trigger)
+    expect(container.querySelector('.period-select')).toHaveClass('open')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    // The .period-menu element itself stays mounted (visibility is
+    // CSS-class driven, not conditional rendering), so the open/closed
+    // check goes through the same '.period-select' class + aria-expanded
+    // assertions the rest of this file already uses, rather than asserting
+    // the menu is removed from the document.
+    expect(container.querySelector('.period-select')).not.toHaveClass('open')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('returns focus to the trigger button when Escape closes the menu', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0))
+
+    render(<ActivityChart applications={[]} />)
+
+    const trigger = screen.getByRole('button', { name: 'this week' })
+    fireEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(document.activeElement).toBe(trigger)
   })
 })

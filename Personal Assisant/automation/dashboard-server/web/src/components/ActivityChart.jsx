@@ -55,6 +55,7 @@ export default function ActivityChart({ applications }) {
   const [periodDays, setPeriodDays] = useState(7)
   const [open, setOpen] = useState(false)
   const selectRef = useRef(null)
+  const btnRef = useRef(null)
 
   // Standard outside-click-closes pattern: only listen while the menu is
   // open, and only remove the listener when it closes/unmounts. Reattaching
@@ -63,13 +64,27 @@ export default function ActivityChart({ applications }) {
   // the very click that opens the menu, because that click's target (the
   // button) is inside `selectRef`, so `.contains(e.target)` is true and the
   // handler leaves it open.
+  //
+  // Escape closes the menu and returns focus to the trigger button, same as
+  // any native menu — piggybacks on this effect's open-gated
+  // attach/detach rather than a second effect.
   useEffect(() => {
     if (!open) return
     function handleClick(e) {
       if (selectRef.current && !selectRef.current.contains(e.target)) setOpen(false)
     }
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        btnRef.current?.focus()
+      }
+    }
     document.addEventListener('click', handleClick)
-    return () => document.removeEventListener('click', handleClick)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('click', handleClick)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [open])
 
   const apps = applications || []
@@ -88,8 +103,10 @@ export default function ActivityChart({ applications }) {
           <button
             type="button"
             className="period-btn"
-            aria-haspopup="true"
+            ref={btnRef}
+            aria-haspopup="menu"
             aria-expanded={open}
+            aria-controls="activity-chart-period-menu"
             onClick={() => setOpen((o) => !o)}
           >
             {PERIOD_LABELS[periodDays]}
@@ -97,11 +114,12 @@ export default function ActivityChart({ applications }) {
               <path d="M1 1 L5 5 L9 1" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <div className="period-menu">
+          <div className="period-menu" id="activity-chart-period-menu" role="menu">
             {PERIODS.map((p) => (
               <button
                 key={p}
                 type="button"
+                role="menuitem"
                 className={p === periodDays ? 'on' : ''}
                 onClick={() => {
                   setPeriodDays(p)

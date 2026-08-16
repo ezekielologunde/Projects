@@ -80,18 +80,32 @@ export default function TopHeader() {
   const { data } = useDashboardData()
   const [menuOpen, setMenuOpen] = useState(false)
   const accountRef = useRef(null)
+  const avatarRef = useRef(null)
 
   // Same outside-click-closes pattern as ActivityChart.jsx's period
   // selector: only listen while open, remove on close/unmount, and skip
   // re-triggering on the click that opened the menu (the button is inside
   // accountRef, so .contains(e.target) is true for that click).
+  //
+  // Escape closes the menu and returns focus to the avatar trigger button,
+  // same as ActivityChart.jsx's period selector.
   useEffect(() => {
     if (!menuOpen) return
     function handleClick(e) {
       if (accountRef.current && !accountRef.current.contains(e.target)) setMenuOpen(false)
     }
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') {
+        setMenuOpen(false)
+        avatarRef.current?.focus()
+      }
+    }
     document.addEventListener('click', handleClick)
-    return () => document.removeEventListener('click', handleClick)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('click', handleClick)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [menuOpen])
 
   const firstName = data?.firstName || null
@@ -117,15 +131,17 @@ export default function TopHeader() {
           <button
             type="button"
             className="header-avatar"
-            aria-haspopup="true"
+            ref={avatarRef}
+            aria-haspopup="menu"
             aria-expanded={menuOpen}
+            aria-controls="account-menu"
             aria-label="Account menu"
             onClick={() => setMenuOpen((o) => !o)}
           >
             {initial || <IconPerson />}
           </button>
-          <div className={`account-menu${menuOpen ? ' open' : ''}`}>
-            <a href="/api/logout" className="account-menu-item">Sign out</a>
+          <div className={`account-menu${menuOpen ? ' open' : ''}`} id="account-menu" role="menu">
+            <a href="/api/logout" className="account-menu-item" role="menuitem">Sign out</a>
           </div>
         </div>
       </div>
