@@ -52,4 +52,11 @@ describe('Home', () => {
     // "item(s)"-suffixed tooltips asserted above.
     expect(container.querySelectorAll('.barchart rect').length).toBeGreaterThan(0)
   })
+
+  it('shows an error state instead of hanging on "loading…" when the fetch rejects', async () => {
+    global.fetch = vi.fn().mockRejectedValueOnce(new Error('network down'))
+    render(<MemoryRouter><Home /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText(/couldn't load dashboard data/i)).toBeInTheDocument())
+    expect(screen.queryByText(/loading…/i)).not.toBeInTheDocument()
+  })
 })

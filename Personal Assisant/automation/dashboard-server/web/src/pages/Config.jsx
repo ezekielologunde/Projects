@@ -2,8 +2,10 @@ import { useDashboardData } from '../hooks/useDashboardData'
 import Card from '../components/Card'
 
 export default function Config() {
-  const { data, loading } = useDashboardData()
-  if (loading || !data) return <div className="loading">loading…</div>
+  const { data, loading, error } = useDashboardData()
+  if (loading) return <div className="loading">loading…</div>
+  if (error) return <div className="empty">Couldn't load dashboard data — try refreshing.</div>
+  if (!data) return null
   const p = data.preferences
   if (!p) return <div className="page"><h2>preferences</h2><div className="empty">profile/preferences.json not found.</div></div>
 

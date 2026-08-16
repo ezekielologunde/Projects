@@ -4,14 +4,18 @@ import Card from '../components/Card'
 import DetailPanel from '../components/DetailPanel'
 
 function money(n) {
-  return `$${Number(n).toFixed(2)}`
+  const num = Number(n)
+  if (Number.isNaN(num)) return '—'
+  return num < 0 ? `-$${Math.abs(num).toFixed(2)}` : `$${num.toFixed(2)}`
 }
 
 export default function Money() {
-  const { data, loading } = useDashboardData()
+  const { data, loading, error } = useDashboardData()
   const [open, setOpen] = useState(null)
 
-  if (loading || !data) return <div className="loading">loading…</div>
+  if (loading) return <div className="loading">loading…</div>
+  if (error) return <div className="empty">Couldn't load dashboard data — try refreshing.</div>
+  if (!data) return null
 
   const f = data.finances
   const dueSoon = data.paymentsDueSoon || []

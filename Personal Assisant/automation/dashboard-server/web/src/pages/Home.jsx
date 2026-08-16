@@ -8,8 +8,10 @@ import ActivityChart from '../components/ActivityChart'
 import ActivityHeatmap from '../components/ActivityHeatmap'
 
 export default function Home() {
-  const { data, loading } = useDashboardData()
-  if (loading || !data) return <div className="loading">loading…</div>
+  const { data, loading, error } = useDashboardData()
+  if (loading) return <div className="loading">loading…</div>
+  if (error) return <div className="empty">Couldn't load dashboard data — try refreshing.</div>
+  if (!data) return null
 
   const hero = pickHeroCandidate(data)
   const modules = NAV_ITEMS.filter((n) => n.key !== 'home' && n.key !== 'config')

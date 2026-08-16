@@ -2,8 +2,10 @@ import { useDashboardData } from '../hooks/useDashboardData'
 import DatedList from '../components/DatedList'
 
 export default function Digests() {
-  const { data, loading } = useDashboardData()
-  if (loading || !data) return <div className="loading">loading…</div>
+  const { data, loading, error } = useDashboardData()
+  if (loading) return <div className="loading">loading…</div>
+  if (error) return <div className="empty">Couldn't load dashboard data — try refreshing.</div>
+  if (!data) return null
   return (
     <div className="page">
       <h2>daily digests</h2>

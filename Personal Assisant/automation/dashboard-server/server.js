@@ -344,6 +344,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (pathname === "/api/related") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "method not allowed" }));
+      return;
+    }
     const { kind, id } = parsed.query;
     const related = kind && id ? findRelated(String(kind), String(id), getDashboardData()) : [];
     res.writeHead(200, { "Content-Type": "application/json" });

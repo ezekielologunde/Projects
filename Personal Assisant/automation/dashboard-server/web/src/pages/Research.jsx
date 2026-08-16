@@ -4,8 +4,10 @@ import Card from '../components/Card'
 const PUBLICATION_YEARS = ['2026', '2025', '2024']
 
 export default function Research() {
-  const { data, loading } = useDashboardData()
-  if (loading || !data) return <div className="loading">loading…</div>
+  const { data, loading, error } = useDashboardData()
+  if (loading) return <div className="loading">loading…</div>
+  if (error) return <div className="empty">Couldn't load dashboard data — try refreshing.</div>
+  if (!data) return null
   const r = data.research
   if (!r) return <div className="page"><h2>doctoral research</h2><div className="empty">not set up yet.</div></div>
 

@@ -9,8 +9,10 @@ const OWNERSHIP_LABELS = {
 }
 
 export default function Projects() {
-  const { data, loading } = useDashboardData()
-  if (loading || !data) return <div className="loading">loading…</div>
+  const { data, loading, error } = useDashboardData()
+  if (loading) return <div className="loading">loading…</div>
+  if (error) return <div className="empty">Couldn't load dashboard data — try refreshing.</div>
+  if (!data) return null
   const pr = data.projectsRegistry
   if (!pr) return <div className="page"><h2>projects registry</h2><div className="empty">not set up yet.</div></div>
 

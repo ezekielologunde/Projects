@@ -4,11 +4,13 @@ import Card from '../components/Card'
 import DetailPanel from '../components/DetailPanel'
 
 export default function Goals() {
-  const { data, loading } = useDashboardData()
+  const { data, loading, error } = useDashboardData()
   const [filter, setFilter] = useState('all')
   const [open, setOpen] = useState(null)
 
-  if (loading || !data) return <div className="loading">loading…</div>
+  if (loading) return <div className="loading">loading…</div>
+  if (error) return <div className="empty">Couldn't load dashboard data — try refreshing.</div>
+  if (!data) return null
 
   const statuses = [...new Set(data.goals.map((g) => g.status))]
   const filtered = filter === 'all' ? data.goals : data.goals.filter((g) => g.status === filter)
