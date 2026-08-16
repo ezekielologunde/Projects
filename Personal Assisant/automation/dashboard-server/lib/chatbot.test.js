@@ -56,4 +56,13 @@ describe('answerQuestion', () => {
     const { matched } = answerQuestion('what is the meaning of life?', sampleData)
     expect(matched).toBe(false)
   })
+
+  it('degrades gracefully instead of throwing when a matched rule errors on malformed data', () => {
+    // counts.staged is absent, so the rule falls back to `data.applications.filter(...)` —
+    // with `applications` missing entirely (plausible malformed/partial data), that throws.
+    const malformedData = { counts: {}, goals: [] }
+    const { answer, matched } = answerQuestion('how many applications are staged?', malformedData)
+    expect(matched).toBe(false)
+    expect(answer).toContain('went wrong')
+  })
 })

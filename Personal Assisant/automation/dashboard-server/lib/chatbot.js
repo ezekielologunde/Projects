@@ -49,7 +49,11 @@ function answerQuestion(question, data) {
   const q = String(question || '').trim().toLowerCase()
   for (const rule of RULES) {
     if (rule.test(q)) {
-      return { answer: rule.answer(data), matched: true }
+      try {
+        return { answer: rule.answer(data), matched: true }
+      } catch {
+        return { answer: 'Something went wrong answering that — try rephrasing?', matched: false }
+      }
     }
   }
   return { answer: '', matched: false }

@@ -4,15 +4,26 @@
 // substring matching — there is no relational ID between profile/*.json
 // and applications/*/status.json today, and building one is out of scope.
 
+// Generic short words that would otherwise create noisy false-positive matches
+// now that tokenize() keeps words as short as 3 characters.
+const STOPWORDS = new Set(['the', 'and', 'for', 'are', 'was', 'not', 'but', 'has', 'had', 'you', 'his', 'her', 'its', 'llc', 'inc'])
+
 function tokenize(str) {
   return String(str || '')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((w) => w.length > 4) // skip short/common words
+    .filter((w) => w.length > 2 && !STOPWORDS.has(w)) // skip very short/common words
 }
 
 function textOf(item) {
   return [item.company, item.role, item.title, item.notes, item.status, item.category]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function textOfAccount(a) {
+  return [a.institution, a.type, a.note, a.owner_account]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
@@ -43,6 +54,15 @@ function findRelated(kind, id, data) {
       const hay = textOf(a)
       if ([...sourceTokens].some((t) => hay.includes(t))) {
         results.push({ kind: 'application', id: a.folder, label: `${a.company} — ${a.role}`, sub: a.status })
+      }
+    }
+  }
+  if (kind !== 'account') {
+    for (const a of data.finances?.accounts || []) {
+      const hay = textOfAccount(a)
+      if ([...sourceTokens].some((t) => hay.includes(t))) {
+        const id = `${a.institution}${a.last4 || ''}`
+        results.push({ kind: 'account', id, label: a.institution, sub: (a.type || '').replace(/_/g, ' ') })
       }
     }
   }

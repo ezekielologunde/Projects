@@ -7,7 +7,7 @@ const data = {
   ],
   goals: [
     { title: 'Cyntraix growth', category: 'business', status: 'active', notes: 'Land the Acme analyst role as a reference client contact.' },
-    { title: 'Unrelated goal', category: 'personal', status: 'active', notes: 'Nothing to do with Acme.' },
+    { title: 'Unrelated goal', category: 'personal', status: 'active', notes: 'Nothing to do with any of that.' },
   ],
   finances: { accounts: [] },
 }
@@ -25,5 +25,33 @@ describe('findRelated', () => {
 
   it('returns an empty array for an unknown id', () => {
     expect(findRelated('application', 'does-not-exist', data)).toEqual([])
+  })
+
+  it('includes an account as a related result when a goal title mentions the institution name', () => {
+    // Source-token generation reads company/role/title/institution off the source item,
+    // so the goal's *title* (not its notes) needs to carry the matching word here.
+    const dataWithAccount = {
+      applications: [],
+      goals: [
+        { title: 'Meridian payoff plan', category: 'finance', status: 'active', notes: '' },
+      ],
+      finances: {
+        accounts: [{ institution: 'Meridian', last4: '4321', type: 'credit_card', note: 'Primary card' }],
+      },
+    }
+    const related = findRelated('goal', 'Meridian payoff plan', dataWithAccount)
+    expect(related.some((r) => r.kind === 'account' && r.id === 'Meridian4321' && r.label === 'Meridian')).toBe(true)
+  })
+
+  it('matches a short (<=4 char) institution/company name that the old length > 4 tokenize filter would have dropped', () => {
+    const dataWithShortName = {
+      applications: [{ folder: '2026-08-15_Visa_Support', company: 'Visa', role: 'Support', notes: '' }],
+      goals: [
+        { title: 'Card cleanup', category: 'finance', status: 'active', notes: 'Related to the Visa application process.' },
+      ],
+      finances: { accounts: [] },
+    }
+    const related = findRelated('application', '2026-08-15_Visa_Support', dataWithShortName)
+    expect(related.some((r) => r.kind === 'goal' && r.label === 'Card cleanup')).toBe(true)
   })
 })
