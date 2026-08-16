@@ -1,27 +1,6 @@
+import { dateRange, formatTooltipDate } from '../lib/dateRange'
+
 const HEATMAP_DAYS = 28
-
-function toDateKey(d) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-// Last N calendar dates (local time, not UTC — found_at/date fields are
-// plain YYYY-MM-DD strings with no timezone), oldest to newest.
-function dateRange(days) {
-  const now = new Date()
-  const result = []
-  for (let i = days - 1; i >= 0; i--) {
-    result.push(toDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)))
-  }
-  return result
-}
-
-function formatTooltipDate(dateKey) {
-  const d = new Date(`${dateKey}T00:00:00`)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
 
 // Tallies one activity count per day across the four dated collections the
 // dashboard tracks, then buckets each day into a 0-4 intensity level —

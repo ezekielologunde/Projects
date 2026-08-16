@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { dateRange, formatTooltipDate, parseDateKey } from '../lib/dateRange'
+import { useOutsideClickClose } from '../hooks/useOutsideClickClose'
 
 const PERIODS = [7, 14, 30]
 const PERIOD_LABELS = { 7: 'this week', 14: 'last 2 weeks', 30: 'this month' }
@@ -11,38 +13,11 @@ const H = 128
 const PAD = 6
 const GAP = 6
 
-function toDateKey(d) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-// Last N calendar dates (local time, not UTC — found_at is a plain
-// YYYY-MM-DD string with no timezone), oldest to newest. Mirrors
-// ActivityHeatmap.jsx's dateRange() so every date-bucketed view in the app
-// agrees on what "today" is; the old app's dateRange() used
-// toISOString().slice(0, 10), which is UTC-based and drops a day for users
-// west of UTC in the evening — deliberately not reproduced here.
-function dateRange(days) {
-  const now = new Date()
-  const result = []
-  for (let i = days - 1; i >= 0; i--) {
-    result.push(toDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)))
-  }
-  return result
-}
-
-function formatTooltipDate(dateKey) {
-  const d = new Date(`${dateKey}T00:00:00`)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
 // Weekday abbreviation for short windows, day-of-month number once the
 // window is too wide for weekday names to stay legible — same threshold
 // (dayCount > 14) as the old dashboard.
 function formatAxisLabel(dateKey, longPeriod) {
-  const d = new Date(`${dateKey}T00:00:00`)
+  const d = parseDateKey(dateKey)
   return longPeriod ? String(d.getDate()) : d.toLocaleDateString('en-US', { weekday: 'short' })
 }
 
@@ -57,35 +32,9 @@ export default function ActivityChart({ applications }) {
   const selectRef = useRef(null)
   const btnRef = useRef(null)
 
-  // Standard outside-click-closes pattern: only listen while the menu is
-  // open, and only remove the listener when it closes/unmounts. Reattaching
-  // per `open` toggle (rather than once on mount) avoids a stale closure
-  // over `open` without needing a ref to track it. This can't misfire on
-  // the very click that opens the menu, because that click's target (the
-  // button) is inside `selectRef`, so `.contains(e.target)` is true and the
-  // handler leaves it open.
-  //
-  // Escape closes the menu and returns focus to the trigger button, same as
-  // any native menu — piggybacks on this effect's open-gated
-  // attach/detach rather than a second effect.
-  useEffect(() => {
-    if (!open) return
-    function handleClick(e) {
-      if (selectRef.current && !selectRef.current.contains(e.target)) setOpen(false)
-    }
-    function handleKeyDown(e) {
-      if (e.key === 'Escape') {
-        setOpen(false)
-        btnRef.current?.focus()
-      }
-    }
-    document.addEventListener('click', handleClick)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('click', handleClick)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [open])
+  // Outside-click/Escape-closes-and-refocuses-trigger, shared with
+  // TopHeader.jsx's account menu — see useOutsideClickClose.js.
+  useOutsideClickClose(selectRef, btnRef, open, setOpen)
 
   const apps = applications || []
   const days = dateRange(periodDays)

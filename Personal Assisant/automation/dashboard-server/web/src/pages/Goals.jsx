@@ -25,8 +25,13 @@ export default function Goals() {
         ))}
       </div>
       <div className="page-list">
-        {filtered.map((g) => (
-          <Card key={g.title} title={g.title} sub={g.category} badge={g.status} onClick={() => setOpen(g)}>
+        {filtered.map((g, i) => (
+          // key includes the array index as a tiebreaker for React only —
+          // DetailPanel's id below still resolves by title, which
+          // cross-links.js matches by exact string; two goals sharing a
+          // title would show the wrong related-items panel, a known
+          // limitation of the current no-id data schema.
+          <Card key={`${g.title}-${i}`} title={g.title} sub={g.category} badge={g.status} onClick={() => setOpen(g)}>
             {g.target_date ? `target ${g.target_date} — ` : ''}{g.notes || ''}
           </Card>
         ))}

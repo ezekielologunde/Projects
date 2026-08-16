@@ -37,7 +37,7 @@ export default function Home() {
         ))}
       </div>
 
-      <section className="activity-section">
+      <section>
         <h2 className="page-subhead">Last 28 days</h2>
         <ActivityHeatmap data={data} />
       </section>

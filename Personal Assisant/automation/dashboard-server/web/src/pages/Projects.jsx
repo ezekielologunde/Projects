@@ -19,8 +19,14 @@ export default function Projects() {
   return (
     <div className="page">
       <h2>projects registry</h2>
-      {pr.projects.map((p) => (
-        <Card key={p.name} title={p.name} sub={p.type} badge={OWNERSHIP_LABELS[p.ownership] || p.ownership}>
+      {pr.projects.map((p, i) => (
+        // key includes the array index as a tiebreaker — p.name is
+        // free-text with no uniqueness guarantee in projects-registry.json,
+        // so two projects sharing a name would otherwise collide as React
+        // keys. (This list isn't wired to DetailPanel, so there's no id
+        // resolution to worry about here — unlike Goals.jsx's g.title key,
+        // which cross-links.js also uses for lookup.)
+        <Card key={`${p.name}-${i}`} title={p.name} sub={p.type} badge={OWNERSHIP_LABELS[p.ownership] || p.ownership}>
           {p.status} — {p.note}
         </Card>
       ))}

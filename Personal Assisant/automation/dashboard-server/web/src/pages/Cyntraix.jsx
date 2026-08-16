@@ -13,8 +13,14 @@ export default function Cyntraix() {
     <div className="page">
       <h2>cyntraix business</h2>
       <Card title={`${c.business.name} — ${c.business.role}`} sub={`founded ${c.business.founded} · ${c.business.structure}`} />
-      {c.clients.map((cl) => (
-        <Card key={cl.name} title={cl.name} badge={<span className={cl.status === 'active' ? 'pulse' : undefined}>{cl.status}</span>}>
+      {c.clients.map((cl, i) => (
+        // key includes the array index as a tiebreaker — cl.name is
+        // free-text with no uniqueness guarantee in cyntraix-business.json,
+        // so two clients sharing a name would otherwise collide as React
+        // keys. (This list isn't wired to DetailPanel, so there's no id
+        // resolution to worry about here — unlike Goals.jsx's g.title key,
+        // which cross-links.js also uses for lookup.)
+        <Card key={`${cl.name}-${i}`} title={cl.name} badge={<span className={cl.status === 'active' ? 'pulse' : undefined}>{cl.status}</span>}>
           {cl.cadence_note || ''}{cl.scope ? ` — scope: ${cl.scope}` : ''}
         </Card>
       ))}

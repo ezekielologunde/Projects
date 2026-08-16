@@ -807,6 +807,17 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
    Chat widget
    ============================================================ */
 .chat-bubble {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 40;
+  border-radius: 999px;
+  padding: 14px 20px;
+  border: none;
+  background: var(--c-home);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
   box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--c-home) 65%, transparent);
   transition: transform .18s var(--ease-out), box-shadow .18s var(--ease-out);
 }
@@ -1097,7 +1108,6 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 .page-list { display: flex; flex-direction: column; gap: 10px; }
 .filter-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 
-.chat-bubble { position: fixed; bottom: 24px; right: 24px; z-index: 40; border-radius: 999px; padding: 14px 20px; border: none; background: var(--c-home); color: #fff; font-weight: 600; cursor: pointer; }
 .chat-panel { position: fixed; bottom: 24px; right: 24px; width: 340px; max-height: 480px; z-index: 40; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; }
 
 @media (max-width: 768px) {

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useDashboardData } from '../hooks/useDashboardData'
+import { useOutsideClickClose } from '../hooks/useOutsideClickClose'
 
 // Bell glyph, drawn in the same style as NavItems.jsx's icon set (20x20
 // grid, currentColor stroke, round caps/joins) so it reads as part of the
@@ -82,31 +83,9 @@ export default function TopHeader() {
   const accountRef = useRef(null)
   const avatarRef = useRef(null)
 
-  // Same outside-click-closes pattern as ActivityChart.jsx's period
-  // selector: only listen while open, remove on close/unmount, and skip
-  // re-triggering on the click that opened the menu (the button is inside
-  // accountRef, so .contains(e.target) is true for that click).
-  //
-  // Escape closes the menu and returns focus to the avatar trigger button,
-  // same as ActivityChart.jsx's period selector.
-  useEffect(() => {
-    if (!menuOpen) return
-    function handleClick(e) {
-      if (accountRef.current && !accountRef.current.contains(e.target)) setMenuOpen(false)
-    }
-    function handleKeyDown(e) {
-      if (e.key === 'Escape') {
-        setMenuOpen(false)
-        avatarRef.current?.focus()
-      }
-    }
-    document.addEventListener('click', handleClick)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('click', handleClick)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [menuOpen])
+  // Outside-click/Escape-closes-and-refocuses-trigger, shared with
+  // ActivityChart.jsx's period selector — see useOutsideClickClose.js.
+  useOutsideClickClose(accountRef, avatarRef, menuOpen, setMenuOpen)
 
   const firstName = data?.firstName || null
   const greeting = firstName ? `${greetingForHour(new Date().getHours())}, ${firstName}` : greetingForHour(new Date().getHours())
