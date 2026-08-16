@@ -1037,6 +1037,17 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
   font-size: 14px;
   color: var(--muted);
 }
+/* Full-page fetch failure — same centered prominence as .loading, but
+   colored and weighted so it reads as "something went wrong" rather than
+   "still loading". Distinct from .empty, which is a small, left-aligned
+   "no items in this list" placeholder for genuinely empty data. */
+.error-state {
+  padding: 40px 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--danger);
+}
 
 .filter-pills button {
   padding: 6px 14px;

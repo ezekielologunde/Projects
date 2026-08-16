@@ -4,7 +4,7 @@ import Card from '../components/Card'
 export default function Cyntraix() {
   const { data, loading, error } = useDashboardData()
   if (loading) return <div className="loading">loading…</div>
-  if (error) return <div className="empty">Couldn't load dashboard data — try refreshing.</div>
+  if (error) return <div className="error-state">Couldn't load dashboard data — try refreshing.</div>
   if (!data) return null
   const c = data.cyntraix
   if (!c) return <div className="page"><h2>cyntraix business</h2><div className="empty">not set up yet.</div></div>

@@ -9,7 +9,7 @@ export default function Goals() {
   const [open, setOpen] = useState(null)
 
   if (loading) return <div className="loading">loading…</div>
-  if (error) return <div className="empty">Couldn't load dashboard data — try refreshing.</div>
+  if (error) return <div className="error-state">Couldn't load dashboard data — try refreshing.</div>
   if (!data) return null
 
   const statuses = [...new Set(data.goals.map((g) => g.status))]
