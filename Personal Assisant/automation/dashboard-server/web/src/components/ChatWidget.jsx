@@ -1,13 +1,29 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export default function ChatWidget() {
   const [open, setOpen] = useState(false)
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([]) // {from: 'me'|'howz', text}
   const [sending, setSending] = useState(false)
+  const inputRef = useRef(null)
+  const bubbleRef = useRef(null)
+  const wasOpenRef = useRef(false)
+
+  // Focus management: move focus into the input when the panel opens, and
+  // return it to the bubble trigger when the panel closes (but not on the
+  // initial mount, when it was never open to begin with).
+  useEffect(() => {
+    if (open) {
+      inputRef.current?.focus()
+    } else if (wasOpenRef.current) {
+      bubbleRef.current?.focus()
+    }
+    wasOpenRef.current = open
+  }, [open])
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (sending) return
     if (!question.trim()) return
     const q = question
     setMessages((m) => [...m, { from: 'me', text: q }])
@@ -30,7 +46,7 @@ export default function ChatWidget() {
 
   if (!open) {
     return (
-      <button className="chat-bubble" onClick={() => setOpen(true)} aria-label="Ask HoWz anything">
+      <button ref={bubbleRef} className="chat-bubble" onClick={() => setOpen(true)} aria-label="Ask HoWz anything">
         Ask HoWz anything
       </button>
     )
@@ -42,7 +58,7 @@ export default function ChatWidget() {
         <span>Ask HoWz</span>
         <button onClick={() => setOpen(false)} aria-label="Close chat">×</button>
       </div>
-      <div className="chat-messages">
+      <div className="chat-messages" aria-live="polite" aria-atomic="false">
         {messages.map((m, i) => (
           <div key={i} className={`chat-msg ${m.from}`}>{m.text}</div>
         ))}
@@ -50,9 +66,11 @@ export default function ChatWidget() {
       </div>
       <form data-testid="chat-form" onSubmit={handleSubmit} className="chat-input-row">
         <input
+          ref={inputRef}
           placeholder="Ask HoWz…"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
+          disabled={sending}
         />
         <button type="submit" disabled={sending}>send</button>
       </form>
