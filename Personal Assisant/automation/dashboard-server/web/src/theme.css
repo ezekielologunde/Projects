@@ -315,6 +315,77 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 }
 
 /* ============================================================
+   Activity bar — segmented in-progress/completed/follow-up bar
+   with a headline "% moved on" stat and matching stat chips.
+   ============================================================ */
+.activity-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.activity-pct {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.activity-pct-num {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.activity-pct-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.activity-segbar {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+.activity-seg {
+  height: 100%;
+  background: var(--seg-color);
+  transition: width .3s var(--ease-out);
+}
+.activity-seg:not(:last-child) {
+  border-right: 2px solid var(--surface);
+}
+.activity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.activity-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+}
+.activity-chip-dot {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--chip-color);
+}
+.activity-chip-count {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.activity-chip-label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* ============================================================
    Activity heatmap — 28-day grid of intensity cells.
    ============================================================ */
 .heatmap {
@@ -807,6 +878,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
   .hero { padding: 26px 22px; }
   .module-card { min-height: 90px; padding: 16px; font-size: 14px; }
   .stat-grid { grid-template-columns: 1fr 1fr; }
+  .activity-chips { gap: 12px; }
   .heatmap { grid-template-columns: repeat(7, 1fr); }
   .detail-overlay { padding: 12px; align-items: flex-end; }
   .detail-panel { width: 100%; max-width: none; max-height: 85vh; padding: 24px 20px; }

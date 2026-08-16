@@ -29,6 +29,14 @@ describe('Home', () => {
     render(<MemoryRouter><Home /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('staged')).toBeInTheDocument())
     expect(screen.getByText('+1 today')).toBeInTheDocument()
-    expect(screen.getAllByTitle(/:/).length).toBe(28)
+    // Heatmap tooltips end in "item"/"items" — scoped this way (rather than
+    // the broader /:/ pattern) so it doesn't also match the ActivityBar
+    // segment tooltips ("In Progress: 100%"), which contain a colon too.
+    expect(screen.getAllByTitle(/items?$/).length).toBe(28)
+  })
+
+  it('renders the activity bar alongside the stat cards and heatmap', async () => {
+    render(<MemoryRouter><Home /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('moved on')).toBeInTheDocument())
   })
 })

@@ -3,6 +3,7 @@ import { useDashboardData } from '../hooks/useDashboardData'
 import { pickHeroCandidate } from '../lib/briefing'
 import { NAV_ITEMS } from '../components/NavItems'
 import StatCards from '../components/StatCards'
+import ActivityBar from '../components/ActivityBar'
 import ActivityHeatmap from '../components/ActivityHeatmap'
 
 export default function Home() {
@@ -20,6 +21,8 @@ export default function Home() {
       </section>
 
       <StatCards counts={data.counts} trends={data.trends} />
+
+      <ActivityBar applications={data.applications} />
 
       <div className="module-grid">
         {modules.map((m) => (
