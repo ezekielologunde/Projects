@@ -31,6 +31,12 @@ describe('Sidebar (icon-only desktop nav)', () => {
     )
 
     expect(screen.getAllByRole('link')).toHaveLength(NAV_ITEMS.length + 1)
-    expect(screen.getByRole('link', { name: 'Sign out' })).toBeInTheDocument()
+
+    // Sign-out is icon-only, matching the rest of the icon-only sidebar —
+    // its label lives only in aria-label/title, same as the nav items above.
+    const signOutLink = screen.getByRole('link', { name: 'Sign out' })
+    expect(signOutLink).toBeInTheDocument()
+    expect(signOutLink).toHaveAttribute('title', 'Sign out')
+    expect(signOutLink.textContent).toBe('')
   })
 })

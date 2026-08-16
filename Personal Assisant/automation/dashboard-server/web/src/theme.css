@@ -110,22 +110,38 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
   gap: 10px;
 }
 .sign-out-link {
-  display: block;
-  padding: 8px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-md);
   color: var(--muted);
-  font-size: 11px;
-  text-align: center;
   text-decoration: none;
   transition: background-color .18s var(--ease-out), color .18s var(--ease-out);
+}
+.sign-out-link svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 .sign-out-link:hover {
   background: var(--line);
   color: var(--ink);
 }
+.sign-out-link:focus-visible {
+  outline: 2px solid var(--c-home);
+  outline-offset: -2px;
+}
 
+/* Stacked vertically (not side-by-side) so the pill fits inside the
+   icon-only sidebar's ~59px inner content width (76px column - 16px
+   horizontal padding - 1px border). A horizontal pair of 26px buttons
+   plus padding/border/gap comes to ~62px, which overflows; stacked, the
+   pill is only as wide as one 26px button (~34px with padding/border). */
 .theme-toggle {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   gap: 2px;
   padding: 3px;
