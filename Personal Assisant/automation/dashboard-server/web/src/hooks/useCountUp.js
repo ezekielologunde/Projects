@@ -30,6 +30,7 @@ export function useCountUp(target, duration = 500) {
     }
 
     const startTime = performance.now()
+    let settled = false
 
     function tick(now) {
       const p = Math.min(1, (now - startTime) / duration)
@@ -39,12 +40,31 @@ export function useCountUp(target, duration = 500) {
       setValue(next)
       if (p < 1) {
         frameRef.current = requestAnimationFrame(tick)
+      } else {
+        settled = true
       }
     }
     frameRef.current = requestAnimationFrame(tick)
 
+    // Safety net: requestAnimationFrame's callback only fires once the browser
+    // actually paints a frame. If it never does (a backgrounded/inactive tab,
+    // throttled rendering, or any other reason a frame never gets composited),
+    // the value would otherwise be stuck wherever it started — permanently,
+    // since nothing re-triggers this effect unless `target` itself changes
+    // again. Force-correct to `target` shortly after the animation should
+    // have finished so a stalled decorative animation can never leave the
+    // displayed number wrong.
+    const fallbackTimer = setTimeout(() => {
+      if (!settled) {
+        settled = true
+        valueRef.current = target
+        setValue(target)
+      }
+    }, duration + 100)
+
     return () => {
       if (frameRef.current != null) cancelAnimationFrame(frameRef.current)
+      clearTimeout(fallbackTimer)
     }
   }, [target, duration])
 

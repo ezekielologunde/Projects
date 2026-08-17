@@ -69,6 +69,30 @@ describe('useCountUp', () => {
     expect(fakeRAF.raf).not.toHaveBeenCalled()
   })
 
+  it('force-corrects to the target if requestAnimationFrame never fires (e.g. a backgrounded tab)', () => {
+    mockMatchMedia(false)
+    // Only fake setTimeout/clearTimeout — the fallback mechanism under test.
+    // Leaving requestAnimationFrame/cancelAnimationFrame out of `toFake` means
+    // installFakeRAF()'s mock (from beforeEach) stays in control of RAF, and
+    // since this test deliberately never calls fakeRAF.flush(), RAF's callback
+    // genuinely never fires, matching the real-world scenario being tested.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const { result } = renderHook(() => useCountUp(42, 500))
+
+    // Deliberately never call fakeRAF.flush() — this simulates the browser
+    // scheduling the frame but never actually painting it, so the tick
+    // callback never runs and the value would otherwise be stuck at 0.
+    expect(result.current).toBe(0)
+
+    act(() => { vi.advanceTimersByTime(599) }) // duration + 100 not yet elapsed
+    expect(result.current).toBe(0)
+
+    act(() => { vi.advanceTimersByTime(2) }) // now past duration + 100
+    expect(result.current).toBe(42)
+
+    vi.useRealTimers()
+  })
+
   it('animates from the previously-rendered value (not always from 0) when the target changes', () => {
     mockMatchMedia(false)
     const { result, rerender } = renderHook(({ target }) => useCountUp(target, 500), {
