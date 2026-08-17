@@ -7,17 +7,22 @@ describe('ChatWidget', () => {
     global.fetch = vi.fn()
   })
 
-  it('is collapsed to a bubble by default', () => {
+  it('shows a persistent input bar with suggested-prompt pills, not a collapsed bubble', () => {
     render(<ChatWidget />)
-    expect(screen.queryByPlaceholderText(/ask howz/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /ask howz anything/i })).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/ask howz/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /how many applications are staged\?/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /ask howz anything/i })).not.toBeInTheDocument()
   })
 
-  it('opens the panel, sends a question, and shows the answer', async () => {
+  it('does not show the message log until a conversation has started', () => {
+    render(<ChatWidget />)
+    expect(screen.queryByText('…')).not.toBeInTheDocument()
+  })
+
+  it('types a question, submits, and shows the answer', async () => {
     global.fetch.mockResolvedValueOnce({ json: async () => ({ answer: 'You have 2 applications staged.', matched: true }) })
     render(<ChatWidget />)
 
-    fireEvent.click(screen.getByRole('button', { name: /ask howz anything/i }))
     fireEvent.change(screen.getByPlaceholderText(/ask howz/i), { target: { value: 'how many applications are staged?' } })
     fireEvent.submit(screen.getByTestId('chat-form'))
 
@@ -25,11 +30,23 @@ describe('ChatWidget', () => {
     expect(global.fetch).toHaveBeenCalledWith('/api/chat', expect.objectContaining({ method: 'POST' }))
   })
 
+  it('clicking a suggested-prompt pill sends that question immediately', async () => {
+    global.fetch.mockResolvedValueOnce({ json: async () => ({ answer: 'Two interviews this week.', matched: true }) })
+    render(<ChatWidget />)
+
+    fireEvent.click(screen.getByRole('button', { name: /any interviews this week\?/i }))
+
+    await waitFor(() => expect(screen.getByText('Two interviews this week.')).toBeInTheDocument())
+    // "Any interviews this week?" now appears twice — once as the pill label,
+    // once echoed as the "me" message — so assert on the echoed one specifically.
+    expect(document.querySelector('.chat-msg.me').textContent).toBe('Any interviews this week?')
+    expect(global.fetch).toHaveBeenCalledWith('/api/chat', expect.objectContaining({ method: 'POST' }))
+  })
+
   it('shows a plain fallback when the engine has no rule for the question', async () => {
     global.fetch.mockResolvedValueOnce({ json: async () => ({ answer: '', matched: false }) })
     render(<ChatWidget />)
 
-    fireEvent.click(screen.getByRole('button', { name: /ask howz anything/i }))
     fireEvent.change(screen.getByPlaceholderText(/ask howz/i), { target: { value: 'what is the meaning of life?' } })
     fireEvent.submit(screen.getByTestId('chat-form'))
 
@@ -40,7 +57,6 @@ describe('ChatWidget', () => {
     global.fetch.mockRejectedValueOnce(new Error('network down'))
     render(<ChatWidget />)
 
-    fireEvent.click(screen.getByRole('button', { name: /ask howz anything/i }))
     fireEvent.change(screen.getByPlaceholderText(/ask howz/i), { target: { value: 'how many applications are staged?' } })
     fireEvent.submit(screen.getByTestId('chat-form'))
 
@@ -57,7 +73,6 @@ describe('ChatWidget', () => {
     global.fetch.mockReturnValueOnce(pending)
     render(<ChatWidget />)
 
-    fireEvent.click(screen.getByRole('button', { name: /ask howz anything/i }))
     fireEvent.change(screen.getByPlaceholderText(/ask howz/i), { target: { value: 'how many applications are staged?' } })
     fireEvent.submit(screen.getByTestId('chat-form'))
 
@@ -73,21 +88,23 @@ describe('ChatWidget', () => {
     fireEvent.submit(screen.getByTestId('chat-form'))
     expect(global.fetch).toHaveBeenCalledTimes(1)
 
+    // A pill click while sending must also be a no-op (same `sending` guard).
+    fireEvent.click(screen.getByRole('button', { name: /any interviews this week\?/i }))
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
     resolveFetch({ json: async () => ({ answer: 'You have 2 applications staged.', matched: true }) })
     await waitFor(() => expect(screen.getByText('You have 2 applications staged.')).toBeInTheDocument())
     expect(global.fetch).toHaveBeenCalledTimes(1)
   })
 
-  it('moves focus to the input when the panel opens', () => {
+  it('returns focus to the input after an answer arrives', async () => {
+    global.fetch.mockResolvedValueOnce({ json: async () => ({ answer: 'You have 2 applications staged.', matched: true }) })
     render(<ChatWidget />)
-    fireEvent.click(screen.getByRole('button', { name: /ask howz anything/i }))
-    expect(document.activeElement).toBe(screen.getByPlaceholderText(/ask howz/i))
-  })
 
-  it('returns focus to the bubble button when the panel closes', () => {
-    render(<ChatWidget />)
-    fireEvent.click(screen.getByRole('button', { name: /ask howz anything/i }))
-    fireEvent.click(screen.getByRole('button', { name: /close chat/i }))
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /ask howz anything/i }))
+    fireEvent.change(screen.getByPlaceholderText(/ask howz/i), { target: { value: 'how many applications are staged?' } })
+    fireEvent.submit(screen.getByTestId('chat-form'))
+
+    await waitFor(() => expect(screen.getByText('You have 2 applications staged.')).toBeInTheDocument())
+    expect(document.activeElement).toBe(screen.getByPlaceholderText(/ask howz/i))
   })
 })

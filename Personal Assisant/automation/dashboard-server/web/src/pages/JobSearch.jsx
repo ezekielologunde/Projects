@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useDashboardData } from '../hooks/useDashboardData'
 import Card from '../components/Card'
 import DetailPanel from '../components/DetailPanel'
+import { NAV_ITEMS } from '../components/NavItems'
+
+const MODULE = NAV_ITEMS.find((n) => n.key === 'jobsearch')
 
 export default function JobSearch() {
   const { data, loading, error } = useDashboardData()
@@ -17,7 +20,10 @@ export default function JobSearch() {
 
   return (
     <div className="page">
-      <h2>job search</h2>
+      <div className="page-header" style={{ '--item-color': MODULE.color }}>
+        <span className="page-header-icon">{MODULE.icon}</span>
+        <h2>job search</h2>
+      </div>
       <div className="filter-pills">
         <button className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>All</button>
         {statuses.map((s) => (
@@ -26,7 +32,7 @@ export default function JobSearch() {
       </div>
       <div className="page-list">
         {filtered.map((a) => (
-          <Card key={a.folder} title={a.company} sub={a.role} badge={<span className={a.status === 'interview' ? 'pulse' : undefined}>{a.status.replace(/_/g, ' ')}</span>} onClick={() => setOpen(a)}>
+          <Card key={a.folder} title={a.company} sub={a.role} accentColor={MODULE.color} badge={<span className={a.status === 'interview' ? 'pulse' : undefined}>{a.status.replace(/_/g, ' ')}</span>} onClick={() => setOpen(a)}>
             found {a.found_at}{a.notes ? ` — ${a.notes}` : ''}
           </Card>
         ))}

@@ -1,4 +1,4 @@
-export default function Card({ title, sub, badge, onClick, children }) {
+export default function Card({ title, sub, badge, onClick, children, accentColor }) {
   const handleKeyDown = onClick
     ? (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -9,7 +9,14 @@ export default function Card({ title, sub, badge, onClick, children }) {
     : undefined
 
   return (
-    <div className={`card${onClick ? ' clickable' : ''}`} onClick={onClick} onKeyDown={handleKeyDown} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}>
+    <div
+      className={`card${onClick ? ' clickable' : ''}`}
+      style={accentColor ? { '--card-accent': accentColor } : undefined}
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+    >
       <div className="card-head">
         <div>
           <div className="card-title">{title}</div>
