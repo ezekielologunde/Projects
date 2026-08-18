@@ -19,10 +19,18 @@ export default function ChatWidget() {
 
   // The floating message log sits just above the bar (see .chat-messages-float
   // in theme.css), so it needs the bar's real rendered height — not a guessed
-  // constant — or it silently overlaps the bar whenever the pill row wraps
-  // (narrow viewport, more/longer prompts) or the bar's height otherwise
-  // changes. Measured synchronously on mount (doesn't depend on any callback
-  // firing) and then kept in sync via ResizeObserver for later changes.
+  // constant — or it silently overlaps the bar whenever the bar's height
+  // changes. Confirmed live that a synchronous mount-time measurement alone
+  // isn't reliable: measured 50px right after mount vs. a settled 86px
+  // moments later (single-row vs. two-row pill layout), with neither
+  // document.fonts.ready (irrelevant — this app has no @font-face) nor
+  // ResizeObserver ever catching the correction. Layered instead:
+  //   1. Synchronous measurement on mount — correct in the common case.
+  //   2. A one-shot setTimeout backstop shortly after mount — a plain
+  //      wall-clock timer, not tied to any paint/layout/resize callback, so
+  //      it fires reliably regardless of what caused the initial mismatch.
+  //   3. ResizeObserver — genuine later changes (viewport resize, pill row
+  //      wrapping), when the browser's observer queue is actually running.
   useEffect(() => {
     const el = barRef.current
     if (!el) return undefined
@@ -30,10 +38,16 @@ export default function ChatWidget() {
     // bar's padding is exactly what the float panel needs to clear too.
     const setHeight = () => document.documentElement.style.setProperty('--chat-bar-height', `${el.offsetHeight}px`)
     setHeight()
-    if (typeof ResizeObserver === 'undefined') return undefined
+    const backstopTimer = setTimeout(setHeight, 300)
+    if (typeof ResizeObserver === 'undefined') {
+      return () => clearTimeout(backstopTimer)
+    }
     const observer = new ResizeObserver(setHeight)
     observer.observe(el)
-    return () => observer.disconnect()
+    return () => {
+      clearTimeout(backstopTimer)
+      observer.disconnect()
+    }
   }, [])
 
   async function ask(q) {
