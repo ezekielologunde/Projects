@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import Card from './Card'
 
-export default function DatedList({ items, title, fetchPath, emptyMessage }) {
+export default function DatedList({ items, title, fetchPath, emptyMessage, accentColor }) {
   const [open, setOpen] = useState(null)
   const [content, setContent] = useState('')
   const requestedDate = useRef(null)
@@ -22,7 +22,7 @@ export default function DatedList({ items, title, fetchPath, emptyMessage }) {
   return (
     <div className="page-list">
       {items.map((item) => (
-        <Card key={item.date} title={item.date} onClick={() => openDate(item.date)} />
+        <Card key={item.date} title={item.date} onClick={() => openDate(item.date)} accentColor={accentColor} />
       ))}
       {open && (
         <div className="detail-overlay" onClick={(e) => { if (e.target === e.currentTarget) setOpen(null) }}>

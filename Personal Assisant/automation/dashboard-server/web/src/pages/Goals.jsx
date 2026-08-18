@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useDashboardData } from '../hooks/useDashboardData'
 import Card from '../components/Card'
 import DetailPanel from '../components/DetailPanel'
+import { NAV_ITEMS } from '../components/NavItems'
+
+const MODULE = NAV_ITEMS.find((n) => n.key === 'goals')
 
 export default function Goals() {
   const { data, loading, error } = useDashboardData()
@@ -17,7 +20,10 @@ export default function Goals() {
 
   return (
     <div className="page">
-      <h2>goals</h2>
+      <div className="page-header" style={{ '--item-color': MODULE.color }}>
+        <span className="page-header-icon">{MODULE.icon}</span>
+        <h2>goals</h2>
+      </div>
       <div className="filter-pills">
         <button className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>All</button>
         {statuses.map((s) => (
@@ -31,7 +37,7 @@ export default function Goals() {
           // cross-links.js matches by exact string; two goals sharing a
           // title would show the wrong related-items panel, a known
           // limitation of the current no-id data schema.
-          <Card key={`${g.title}-${i}`} title={g.title} sub={g.category} badge={g.status} onClick={() => setOpen(g)}>
+          <Card key={`${g.title}-${i}`} title={g.title} sub={g.category} badge={g.status} accentColor={MODULE.color} onClick={() => setOpen(g)}>
             {g.target_date ? `target ${g.target_date} — ` : ''}{g.notes || ''}
           </Card>
         ))}

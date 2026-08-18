@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useDashboardData } from '../hooks/useDashboardData'
 import Card from '../components/Card'
 import DetailPanel from '../components/DetailPanel'
+import { NAV_ITEMS } from '../components/NavItems'
+
+const MODULE = NAV_ITEMS.find((n) => n.key === 'money')
 
 function money(n) {
   const num = Number(n)
@@ -22,7 +25,10 @@ export default function Money() {
 
   return (
     <div className="page">
-      <h2>money</h2>
+      <div className="page-header" style={{ '--item-color': MODULE.color }}>
+        <span className="page-header-icon">{MODULE.icon}</span>
+        <h2>money</h2>
+      </div>
 
       <div className="page-subhead">payments due soon</div>
       {dueSoon.length === 0 ? (
@@ -30,7 +36,7 @@ export default function Money() {
       ) : (
         <div className="page-list">
           {dueSoon.map((p) => (
-            <Card key={`${p.institution}-${p.due}`} title={p.institution} badge={money(p.amount)}>
+            <Card key={`${p.institution}-${p.due}`} title={p.institution} badge={money(p.amount)} accentColor={MODULE.color}>
               due {p.due}
             </Card>
           ))}
@@ -45,6 +51,7 @@ export default function Money() {
             <Card
               key={id} title={a.institution} sub={`${(a.type || '').replace(/_/g, ' ')} · ${a.owner_account || ''}`}
               badge={a.latest_statement ? money(a.latest_statement.balance) : undefined}
+              accentColor={MODULE.color}
               onClick={() => setOpen({ id, title: a.institution, sub: a.type, note: a.note })}
             >
               {a.latest_statement ? `min payment ${money(a.latest_statement.minimum_payment)}${a.latest_statement.minimum_payment_due ? ` due ${a.latest_statement.minimum_payment_due}` : ''} — ` : ''}{a.note || ''}
@@ -56,7 +63,7 @@ export default function Money() {
       <div className="page-subhead">recurring payments</div>
       <div className="page-list">
         {(f?.recurring_payments || []).map((r) => (
-          <Card key={r.payee} title={r.payee} sub={`${r.category || ''} · ${r.method || ''}`} badge={r.amount ? money(r.amount) : undefined}>
+          <Card key={r.payee} title={r.payee} sub={`${r.category || ''} · ${r.method || ''}`} badge={r.amount ? money(r.amount) : undefined} accentColor={MODULE.color}>
             {r.cadence || ''}{r.note ? ` — ${r.note}` : ''}
           </Card>
         ))}
@@ -65,7 +72,7 @@ export default function Money() {
       <div className="page-subhead">recent one-off transactions</div>
       <div className="page-list">
         {(f?.one_off_transactions_seen || []).map((t, i) => (
-          <Card key={i} title={t.payee} sub={`${t.category || ''} · ${t.method || ''}`} badge={money(t.amount)}>
+          <Card key={i} title={t.payee} sub={`${t.category || ''} · ${t.method || ''}`} badge={money(t.amount)} accentColor={MODULE.color}>
             {t.date || ''}{t.account ? ` · ${t.account}` : ''}
           </Card>
         ))}

@@ -1,5 +1,8 @@
 import { useDashboardData } from '../hooks/useDashboardData'
 import DatedList from '../components/DatedList'
+import { NAV_ITEMS } from '../components/NavItems'
+
+const MODULE = NAV_ITEMS.find((n) => n.key === 'inbox')
 
 export default function Inbox() {
   const { data, loading, error } = useDashboardData()
@@ -8,8 +11,11 @@ export default function Inbox() {
   if (!data) return null
   return (
     <div className="page">
-      <h2>inbox — needs revisiting</h2>
-      <DatedList items={data.inbox} title="inbox" fetchPath="/api/inbox" emptyMessage="No inbox reviews yet." />
+      <div className="page-header" style={{ '--item-color': MODULE.color }}>
+        <span className="page-header-icon">{MODULE.icon}</span>
+        <h2>inbox — needs revisiting</h2>
+      </div>
+      <DatedList items={data.inbox} title="inbox" fetchPath="/api/inbox" emptyMessage="No inbox reviews yet." accentColor={MODULE.color} />
     </div>
   )
 }

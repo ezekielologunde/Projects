@@ -1,7 +1,18 @@
 import { useDashboardData } from '../hooks/useDashboardData'
 import Card from '../components/Card'
+import { NAV_ITEMS } from '../components/NavItems'
 
 const PUBLICATION_YEARS = ['2026', '2025', '2024']
+const MODULE = NAV_ITEMS.find((n) => n.key === 'research')
+
+function PageHeader() {
+  return (
+    <div className="page-header" style={{ '--item-color': MODULE.color }}>
+      <span className="page-header-icon">{MODULE.icon}</span>
+      <h2>doctoral research</h2>
+    </div>
+  )
+}
 
 export default function Research() {
   const { data, loading, error } = useDashboardData()
@@ -9,12 +20,12 @@ export default function Research() {
   if (error) return <div className="error-state">Couldn't load dashboard data — try refreshing.</div>
   if (!data) return null
   const r = data.research
-  if (!r) return <div className="page"><h2>doctoral research</h2><div className="empty">not set up yet.</div></div>
+  if (!r) return <div className="page"><PageHeader /><div className="empty">not set up yet.</div></div>
 
   return (
     <div className="page">
-      <h2>doctoral research</h2>
-      <Card title={r.program.degree} sub={`${r.program.institution} · ${r.program.location} · expected ${r.program.expected} · ${r.program.status}`}>
+      <PageHeader />
+      <Card title={r.program.degree} sub={`${r.program.institution} · ${r.program.location} · expected ${r.program.expected} · ${r.program.status}`} accentColor={MODULE.color}>
         {r._meta?.orcid_url && (
           <div>
             <a href={r._meta.orcid_url} target="_blank" rel="noopener">{r._meta.orcid_url}</a>
@@ -27,11 +38,11 @@ export default function Research() {
           </div>
         )}
       </Card>
-      <Card title="research areas">
+      <Card title="research areas" accentColor={MODULE.color}>
         {r.research_areas.map((a, i) => <div key={i}>{a}</div>)}
       </Card>
       {r.potential_publication_leads?.length > 0 && (
-        <Card title="publication leads">
+        <Card title="publication leads" accentColor={MODULE.color}>
           {r.potential_publication_leads.map((p, i) => (
             <div key={i}>
               <strong>{p.venue}</strong> — {p.status}
@@ -40,7 +51,7 @@ export default function Research() {
         </Card>
       )}
       {r.publications?.source && (
-        <Card title="publications" sub={r.publications.source}>
+        <Card title="publications" sub={r.publications.source} accentColor={MODULE.color}>
           {r.publications.note || ''}
           {PUBLICATION_YEARS.filter((y) => r.publications[y]?.length).map((y) => (
             <div key={y}>
@@ -51,7 +62,7 @@ export default function Research() {
         </Card>
       )}
       {r._meta?.open_items?.length > 0 && (
-        <Card title="still needs your input">
+        <Card title="still needs your input" accentColor={MODULE.color}>
           {r._meta.open_items.map((item, i) => <div key={i}>{item}</div>)}
         </Card>
       )}
