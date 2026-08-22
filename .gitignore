@@ -1,3 +1,7 @@
+# Symlinked project knowledge bases (owned by each project's own repo)
+# Add one line per linked project, e.g.:
+# 02 - Projects/Preppa/
+
 # Obsidian per-device state
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
