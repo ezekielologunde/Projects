@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "focus-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "Dating App/app", "dev"],
+      "port": 3000
+    }
+  ]
+}

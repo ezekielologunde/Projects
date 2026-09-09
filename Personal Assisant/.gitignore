@@ -1,0 +1,23 @@
+# Personal/PII data for the job-application automation — never track this
+profile/
+applications/
+digests/
+logs/
+news/
+inbox/
+
+# Real resumes, cover letters, teaching/research statements — same sensitivity
+# class as profile/, just predates this system and was never folded into it
+Teaching/
+
+# OS/editor cruft
+.DS_Store
+desktop.ini
+
+# Full mailbox exports (PST/OST/MBOX) — massive PII, never track these regardless of where they land
+*.pst
+*.ost
+*.mbox
+
+# Node dependencies
+node_modules/
