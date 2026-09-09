@@ -103,6 +103,20 @@ A sixth input proposed a "product constitution," a worked "True Focus" example, 
 
 The product-facing content of sections 1 and 2 (rules, states, screens, copy) now also lives in its own document, `2026-09-09-focus-product-spec-v1.md`, written for a designer or test facilitator rather than an engineer, and frozen as v1: no new product decisions, only what was already decided here, organized for a different reader. This document remains authoritative for schema, security, and function behavior; that one is authoritative for what a screen says and does. The clickable prototype was expanded from 20 to the 30 screens that document enumerates, matched one-to-one, and re-verified.
 
+### 0.9 Height as a non-negotiable (2026-09-09)
+
+A seventh input proposed adding height as a real preference rather than display-only profile trivia, with a specific design: a relative preference (taller/around/shorter/a specific range) rather than an absolute number, `prefer` as the default with `must` available behind the same explicit friction every other must-have already requires, reciprocal and never a population-wide desirability signal, never paywalled, never auto-relaxed, and never given outsized visual prominence. Every cited claim was checked against its actual source before any of this was written into the spec, per this project's standing practice; several needed correction:
+
+- **Confirmed as cited:** the 2013 speed-dating study (Stulp et al., *Animal Behaviour*) sampled 5,782 daters across 128,104 decisions. Women were most likely to choose partners about 25 cm taller than themselves; men showed a much weaker preference, around 7 cm shorter. Actual matches formed at a 19 cm difference — real compromise, but skewed toward what women wanted more than a straight midpoint between the two stated preferences, worth stating precisely rather than rounding to "in between."
+- **Confirmed as cited:** the cross-cultural finding that a person's own height predicts their preferred partner height is real (Pisanski et al., *Frontiers in Psychology*, 2022; Canada, Cuba, Norway, and the US), and directly supports asking for a relative preference instead of an absolute number.
+- **Confirmed as cited:** the 2025 *Human Nature* study on height preference and gender-norm endorsement is real. Women in it wanted a partner about 16 cm taller than themselves on average, and valuing height correlated with higher self-reported endorsement of traditional gender norms in both sexes — a correlation the study itself reports, not a demonstrated causal mechanism, which is how it's described here.
+- **Confirmed as cited, with a correction:** the conjoint-analysis study is real (*Computers in Human Behavior Reports*, 2024/2025; 445 daters, 5,340 decisions) and height's effect on selection was 7 to 20 times smaller than attractiveness, matching the "photos remain indispensable" point exactly. Not mentioned in the original input: the same study found men's and women's revealed preferences (actual swiping choices) were similar in weight given to each trait, a smaller gender gap than the survey-based studies above show for stated preference. That gap between what people say and what they do is itself a reason to default to `prefer`, not `must`.
+- **Not confirmed as stated:** a specific "22% of women, 8% of men" Pew figure could not be located. Multiple other surveys support the same direction (women report height mattering considerably more than men do — one put it at roughly 43% of women calling it important or very important against a majority of men calling it unimportant), so the underlying claim is well supported; the specific number is not repeated here since it couldn't be verified.
+- **More important than anything in the original input:** Tinder is currently testing a paid height preference (Gold/Platinum subscribers) that is explicitly a soft signal, not a hard filter — "won't actually block or exclude profiles but instead inform recommendations" (TechCrunch, CNN, June 2025). This is real-world validation that `prefer`-not-`must` by default is the right call even for an incumbent optimizing for engagement, and a concrete cautionary example for why constitution rule 6 (no paid filters) matters here specifically: Focus gives everyone, free, on day one, exactly the preference model a competitor is charging for. Tinder's own Search feature separately refuses to let anyone search by height, race, religion, body type, or political affiliation at all, on the stated reasoning that the best connections come from focusing on the person, not a checklist — independent support for keeping height inline with occupation on a card rather than a headline trait.
+- **Not confirmed either way, not load-bearing:** the specific claims about exactly how Hinge's and Bumble's current filter menus are laid out. Hinge's general "Dealbreakers" mechanism is real and can apply to several profile fields; Focus's own design doesn't depend on matching any competitor's menu structure, so this wasn't pursued further.
+
+Height is added to section 2.3's non-negotiables table, `preferences` in section 5.2, `mutually_compatible` in section 7.2, and `reciprocal_score` in section 7.3, following the exact pattern every other soft-preference-with-optional-must-have already uses — no new mechanism, no special case. `Dating App/docs/specs/2026-09-09-focus-product-spec-v1.md` and the clickable prototype's Must-haves screen are both updated to match.
+
 ---
 
 ## 1. Purpose, goals, non-goals
@@ -226,6 +240,9 @@ Capacity is a ceiling, not a quota: choosing 3 means "at most three people at on
 | Timeline | Ready now, within a year, exploring slowly | Display only |
 | Would relocate | Yes, no, maybe | Display only |
 | Income band | Optional, five bands | Display only, no filter |
+| Height preference | Doesn't matter, taller than me, around my height, shorter than me, or a specific range | Yes, but `prefer` by default; `must` requires the same explicit second confirmation every other must-have already requires (section 0.9) |
+
+**Height preference is relative, not absolute, by default** (section 0.9): a person is asked how their preference relates to their own height, not for a raw number, matching the finding that a person's own height predicts their preferred partner height more reliably than any single population-wide target does. `prefer` never filters, only nudges `reciprocal_score` (section 7.3); `must` filters, same as any other must-have, and is never silently relaxed at pool exhaustion (section 2.7). Height is never used to compute a cross-population desirability signal; it only ever contributes to how well two specific people's own stated preferences point toward each other, the same rule heritage and every other soft preference already follows. On a card or full profile, height sits inline with occupation and education as plain text, never enlarged, bolded, or badged.
 
 **Heritage**, all optional, all self-written with suggestions as you type, so a Haitian, a Yoruba, and a Gujarati use the same fields: background, community or tribe, family origin country and region, island, or state, languages spoken, country raised in. A master switch, "Use heritage in who I'm shown," is off by default. When on, each heritage field carries an importance the user chose: nice to have, important, or must, with the acceptable values typed by the user. Nice to have and important never filter, only reorder; must filters. A separate switch, "Show heritage on my profile," independently controls whether others see the user's heritage values at all. The system never infers, ranks, or optimises on heritage on its own.
 
@@ -495,6 +512,7 @@ genotype:         AA | AS | SS | AC | SC | unknown
 education:        high_school | some_college | bachelors | masters | doctorate | trade | other
 heritage_field:   background | community | origin_country | origin_region | language | raised_in
 pref_mode:        nice_to_have | important | must
+height_pref:      doesnt_matter | taller | around | shorter | range
 feed_decision:    none | like | pass
 like_status:      pending | declined | connected | expired
 connection_status: active | ended
@@ -574,7 +592,7 @@ PK `(profile_id, field, value_key)`. At most 5 values per field, enforced by tri
 
 **preferences** (owner and `private`-schema functions only)
 
-kids_must boolean, kids_accept kids[]; faith_key_must boolean, faith_key_accept text[]; practice_must boolean, practice_accept practice[]; politics_must boolean, politics_accept politics[]; smoking_must, smoking_accept habit[]; drinking_must, drinking_accept habit[]; genotype_must boolean, genotype_accept genotype[]; use_heritage boolean default false. A `must` with an empty accept array is rejected by CHECK.
+kids_must boolean, kids_accept kids[]; faith_key_must boolean, faith_key_accept text[]; practice_must boolean, practice_accept practice[]; politics_must boolean, politics_accept politics[]; smoking_must, smoking_accept habit[]; drinking_must, drinking_accept habit[]; genotype_must boolean, genotype_accept genotype[]; height_pref_mode height_pref (`doesnt_matter` default, `taller`, `around`, `shorter`, `range`), height_pref_min_cm smallint, height_pref_max_cm smallint (both null unless mode is `range`), height_pref_must boolean default false; use_heritage boolean default false. A `must` with an empty accept array is rejected by CHECK. `around` means within 8 cm of the person's own `profiles.height_cm` either way (section 0.9); `taller`/`shorter` compare directly against the candidate's own `height_cm`, so neither needs a stored range.
 
 **heritage_preferences** (owner and `private`-schema functions only)
 
@@ -915,6 +933,7 @@ True when all of the following hold. This function is intentionally about compat
 - Distance between coarse coordinates is within both `max_distance_km`.
 - For each of kids, faith_key, practice, politics, smoking, drinking, genotype: if A's `must` is set, B's answer is in A's accept list; and the same with roles reversed. A `must` on genotype against a person with the health section disabled fails.
 - For each heritage field where A has `use_heritage = true` and mode `must`: at least one of B's `value_key`s for that field is in A's `accept_keys`; and reversed.
+- Height (section 0.9): if A's `height_pref_must` is set, B's `height_cm` satisfies A's `height_pref_mode` (`taller`/`shorter` compared directly against A's own `height_cm`, `around` within 8 cm of it, `range` within `height_pref_min_cm..height_pref_max_cm`); and reversed. `doesnt_matter` and a `prefer`-only preference never affect compatibility, only `reciprocal_score`.
 
 `nice_to_have` and `important` never affect compatibility, only ordering.
 
@@ -926,6 +945,7 @@ For each of `(a, b)` and `(b, a)` in turn, sum:
 
 - Heritage: zero if that person's `use_heritage` is false; otherwise the weighted sum of their satisfied heritage rules about the other, `important` counts 3, `nice_to_have` counts 1 (unchanged from the prior draft's `preference_score`, just now applied in both directions and added together).
 - Soft lifestyle alignment: +1 if `timeline` matches exactly, +1 if `relocate` matches exactly. These are display-only fields with no hard-filter role (section 2.3); this is the only place they affect anything, and only as a small nudge to ordering, never as a filter.
+- Height (section 0.9): +1 if that person's `height_pref_mode` is not `doesnt_matter` and the other satisfies it, by the same comparison `mutually_compatible` uses. This is deliberately a flat, small nudge like the other two soft-preference bullets above, never a population-wide "taller is better" term: it only ever reflects one specific person's own stated preference against one specific other person's own height, contributing nothing when nobody involved has a height preference at all.
 
 The total is halved and rounded, so a change to only one side's preferences doesn't silently double-count. Distance and recency are applied separately as tie-breakers in `get_daily_feed`, not folded into this score, so this function stays a pure statement of "how much do these two people's own stated preferences point toward each other," inspectable and explainable, matching the goal in section 1 that a candidate is ordered by something a person could, if they asked, actually have explained to them (section 7.4's `shared_factors`), never by an opaque model. Used for ordering and for generating the explanation shown to the user; never for filtering, and never shown to a user as a number.
 

@@ -21,6 +21,8 @@ Non-negotiable for every future feature. A feature that needs to violate one of 
 9. A must-have is never silently relaxed. Only the person who set it can loosen it, deliberately, on their own settings screen.
 10. An empty discovery result — "You're caught up" — is a correct, acceptable outcome, not a failure state to paper over with a wider funnel.
 
+**Height is a non-negotiable like any other, not a special case.** A person states it as a preference relative to their own height (taller / around / shorter / a specific range), not a raw number — people's own height predicts what they prefer better than a fixed target does. It defaults to a soft preference that only nudges ranking; making it a hard filter takes the same explicit second confirmation as any other must-have (rule 9), it's reciprocal in both directions, never paywalled (rule 8), and never shown as a headline trait — it sits inline with occupation, same size, same weight.
+
 ## 2. States and events
 
 Not four mutually exclusive buckets — two independent things plus a per-connection record, kept this simple on purpose:
