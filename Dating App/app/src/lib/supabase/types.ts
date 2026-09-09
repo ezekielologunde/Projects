@@ -479,6 +479,7 @@ export type Database = {
           kind: Database["public"]["Enums"]["upload_kind"]
           object_path: string
           position: number | null
+          poster_object_path: string | null
           used_at: string | null
           user_id: string
           verification_id: string | null
@@ -491,6 +492,7 @@ export type Database = {
           kind: Database["public"]["Enums"]["upload_kind"]
           object_path: string
           position?: number | null
+          poster_object_path?: string | null
           used_at?: string | null
           user_id: string
           verification_id?: string | null
@@ -503,6 +505,7 @@ export type Database = {
           kind?: Database["public"]["Enums"]["upload_kind"]
           object_path?: string
           position?: number | null
+          poster_object_path?: string | null
           used_at?: string | null
           user_id?: string
           verification_id?: string | null
@@ -601,6 +604,47 @@ export type Database = {
           },
         ]
       }
+      video_prompts: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          poster_height: number | null
+          poster_path: string
+          poster_width: number | null
+          profile_id: string
+          prompt_text: string
+          video_path: string
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          poster_height?: number | null
+          poster_path: string
+          poster_width?: number | null
+          profile_id: string
+          prompt_text: string
+          video_path: string
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          poster_height?: number | null
+          poster_path?: string
+          poster_width?: number | null
+          profile_id?: string
+          prompt_text?: string
+          video_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_prompts_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -628,6 +672,17 @@ export type Database = {
       }
       process_upload: {
         Args: { height?: number; ticket_id: string; width?: number }
+        Returns: Json
+      }
+      process_video_prompt_upload: {
+        Args: {
+          duration_ms?: number
+          poster_height?: number
+          poster_width?: number
+          prompt_text?: string
+          ticket_id: string
+          video_format?: string
+        }
         Returns: Json
       }
       record_consent: {
@@ -684,7 +739,7 @@ export type Database = {
       relocate: "yes" | "no" | "maybe"
       seeking: "women" | "men" | "everyone"
       timeline: "ready_now" | "within_year" | "exploring"
-      upload_kind: "photo" | "selfie"
+      upload_kind: "photo" | "selfie" | "video_prompt"
       verification_decision: "approved" | "rejected"
     }
     CompositeTypes: {
@@ -862,7 +917,7 @@ export const Constants = {
       relocate: ["yes", "no", "maybe"],
       seeking: ["women", "men", "everyone"],
       timeline: ["ready_now", "within_year", "exploring"],
-      upload_kind: ["photo", "selfie"],
+      upload_kind: ["photo", "selfie", "video_prompt"],
       verification_decision: ["approved", "rejected"],
     },
   },

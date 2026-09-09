@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { uploadImage } from "./upload-helpers";
+import { uploadImage, uploadVideoPrompt } from "./upload-helpers";
 import { friendlyErrorMessage } from "@/lib/error-messages";
 import type { Enums } from "@/lib/supabase/types";
 
@@ -123,6 +123,7 @@ type WizardData = {
   heritage: { field: Enums<"heritage_field">; value: string }[];
   heritagePrefs: { field: Enums<"heritage_field">; mode: Enums<"pref_mode"> }[];
   photos: { position: number }[];
+  videoPrompt: { prompt_text: string; duration_ms: number | null } | null;
   verification: { id: string; pose_code: string; selfie_path: string | null } | null;
 };
 
@@ -148,8 +149,17 @@ export default function OnboardingWizard() {
     } = await supabase.auth.getUser();
     if (!user) return null;
     const uid = user.id;
-    const [profileRes, sensitiveRes, answersRes, preferencesRes, heritageRes, heritagePrefsRes, photosRes, verificationRes] =
-      await Promise.all([
+    const [
+      profileRes,
+      sensitiveRes,
+      answersRes,
+      preferencesRes,
+      heritageRes,
+      heritagePrefsRes,
+      photosRes,
+      videoPromptRes,
+      verificationRes,
+    ] = await Promise.all([
         supabase
           .from("profiles")
           .select(
@@ -173,6 +183,7 @@ export default function OnboardingWizard() {
         supabase.from("profile_heritage").select("field, value").eq("profile_id", uid),
         supabase.from("heritage_preferences").select("field, mode").eq("profile_id", uid),
         supabase.from("photos").select("position").eq("profile_id", uid),
+        supabase.from("video_prompts").select("prompt_text, duration_ms").eq("profile_id", uid).maybeSingle(),
         supabase
           .from("verifications")
           .select("id, pose_code, selfie_path")
@@ -191,6 +202,7 @@ export default function OnboardingWizard() {
       heritage: heritageRes.data ?? [],
       heritagePrefs: heritagePrefsRes.data ?? [],
       photos: photosRes.data ?? [],
+      videoPrompt: videoPromptRes.data,
       verification: verificationRes.data,
     };
   }
@@ -283,7 +295,15 @@ export default function OnboardingWizard() {
         />
       )}
       {step === "health" && <HealthStep supabase={supabase} run={run} onNext={next} onBack={back} initial={data.answers} />}
-      {step === "photos" && <PhotosStep supabase={supabase} onNext={next} onBack={back} initialPhotos={data.photos} />}
+      {step === "photos" && (
+        <PhotosStep
+          supabase={supabase}
+          onNext={next}
+          onBack={back}
+          initialPhotos={data.photos}
+          initialVideoPrompt={data.videoPrompt}
+        />
+      )}
       {step === "selfie" && <SelfieStep supabase={supabase} onNext={next} onBack={back} initial={data.verification} />}
       {step === "review" && <ReviewStep supabase={supabase} run={run} onBack={back} onDone={() => router.push("/onboarding/pending")} />}
 
@@ -1043,12 +1063,14 @@ function HealthStep({
         if (ok) onNext();
       }}
     >
-      <h2 className="text-lg font-medium">Health compatibility (optional)</h2>
+      <h2 className="text-lg font-medium">Genetic compatibility (optional)</h2>
       <p className="text-sm text-gray-500">
-        Some people choose to consider inherited blood conditions when dating seriously. This is
-        optional and sensitive. Focus never infers it and does not require it.
+        Some people want to consider inherited genetic conditions when dating seriously, especially
+        if biological children are part of the plan. Focus never infers this and never requires it.
+        Your answer is never shown on your profile, and nobody can see it or know whether you
+        completed this section.
       </p>
-      <Checkbox checked={enabled} onChange={setEnabled} label="I want to include this" />
+      <Checkbox checked={enabled} onChange={setEnabled} label="Set this up privately" />
       {enabled && (
         <Field label="Genotype">
           <select
@@ -1075,11 +1097,13 @@ function PhotosStep({
   onNext,
   onBack,
   initialPhotos,
+  initialVideoPrompt,
 }: {
   supabase: SB;
   onNext: () => void;
   onBack: () => void;
   initialPhotos: { position: number }[];
+  initialVideoPrompt: { prompt_text: string; duration_ms: number | null } | null;
 }) {
   const [busySlot, setBusySlot] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1123,7 +1147,286 @@ function PhotosStep({
         ))}
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
+      <VideoPromptRecorder supabase={supabase} initial={initialVideoPrompt} />
       <StepButtons onBack={onBack} onNext={onNext} nextLabel="Continue" disabled={!uploaded[1]} />
+    </div>
+  );
+}
+
+const VIDEO_PROMPT_QUESTIONS = [
+  "What are you looking forward to building with someone?",
+  "What's something that always makes you laugh?",
+  "Tell me what a great weekend looks like to you.",
+  "What's something you're genuinely passionate about?",
+  "What does family mean to you?",
+] as const;
+
+const MAX_VIDEO_PROMPT_SECONDS = 30;
+
+/**
+ * The optional video prompt (spec sections 0.12, 0.14): 30 seconds,
+ * recorded in-app only, review before it's saved, no filters or imported
+ * files. A `<canvas>` grabs one frame from the just-recorded clip as its
+ * poster -- there's no server-side video decode in this phase, so the
+ * poster is the only frame ever extracted, and it happens here, not on
+ * the server (spec section 0.14).
+ */
+function VideoPromptRecorder({
+  supabase,
+  initial,
+}: {
+  supabase: SB;
+  initial: { prompt_text: string; duration_ms: number | null } | null;
+}) {
+  type Phase = "idle" | "recording" | "review" | "saved" | "unsupported";
+  const [phase, setPhase] = useState<Phase>(
+    typeof window !== "undefined" && (!navigator.mediaDevices || !window.MediaRecorder) ? "unsupported" : "idle",
+  );
+  const [promptText, setPromptText] = useState<string>(initial?.prompt_text ?? VIDEO_PROMPT_QUESTIONS[0]);
+  const [savedPromptText, setSavedPromptText] = useState<string | null>(initial?.prompt_text ?? null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const videoBlobRef = useRef<Blob | null>(null);
+  const posterBlobRef = useRef<Blob | null>(null);
+  const startedAtRef = useRef<number>(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const liveVideoRef = useRef<HTMLVideoElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const startingRef = useRef(false);
+
+  useEffect(() => {
+    // Release the camera/mic and any pending preview blob the moment this
+    // unmounts, regardless of phase -- previewUrlRef, not previewUrl
+    // itself, since this cleanup closes over its mount-time value and
+    // would otherwise revoke a stale (or no) URL if the recorder unmounts
+    // mid-review rather than through redo()/useThisTake()'s own cleanup.
+    return () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    };
+  }, []);
+
+  async function startRecording() {
+    if (startingRef.current || phase === "recording") return;
+    startingRef.current = true;
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      // A second call could have raced this one while getUserMedia was
+      // pending; release whichever stream loses instead of orphaning it.
+      if (streamRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        startingRef.current = false;
+        return;
+      }
+      streamRef.current = stream;
+      if (liveVideoRef.current) {
+        liveVideoRef.current.srcObject = stream;
+        await liveVideoRef.current.play().catch(() => {});
+      }
+
+      const mimeType = ["video/webm;codecs=vp9,opus", "video/webm", "video/mp4"].find((t) =>
+        typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported?.(t),
+      );
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => finishRecording(recorder.mimeType || "video/webm");
+      recorderRef.current = recorder;
+
+      recorder.start();
+      startedAtRef.current = Date.now();
+      setElapsedSeconds(0);
+      setPhase("recording");
+      timerRef.current = setInterval(() => {
+        const secs = Math.floor((Date.now() - startedAtRef.current) / 1000);
+        setElapsedSeconds(secs);
+        if (secs >= MAX_VIDEO_PROMPT_SECONDS) stopRecording();
+      }, 200);
+    } catch {
+      setError("Focus needs camera and microphone access to record a video prompt.");
+    } finally {
+      startingRef.current = false;
+    }
+  }
+
+  function stopRecording() {
+    if (timerRef.current) clearInterval(timerRef.current);
+    // A rapid double-click (or the 30s auto-stop racing a manual click)
+    // would otherwise call .stop() on an already-"inactive" recorder,
+    // which throws InvalidStateError.
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }
+
+  function finishRecording(mimeType: string) {
+    const blob = new Blob(chunksRef.current, { type: mimeType });
+    videoBlobRef.current = blob;
+    const url = URL.createObjectURL(blob);
+    previewUrlRef.current = url;
+    setPreviewUrl(url);
+    setPhase("review");
+    captureFrame(blob);
+  }
+
+  function captureFrame(blob: Blob) {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.src = URL.createObjectURL(blob);
+    video.onloadeddata = () => {
+      video.currentTime = Math.min(0.1, (video.duration || 1) / 2);
+    };
+    video.onseeked = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 480;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        (posterBlob) => {
+          if (posterBlob) posterBlobRef.current = posterBlob;
+        },
+        "image/jpeg",
+        0.85,
+      );
+      URL.revokeObjectURL(video.src);
+    };
+  }
+
+  function redo() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrlRef.current = null;
+    videoBlobRef.current = null;
+    posterBlobRef.current = null;
+    setPreviewUrl(null);
+    setElapsedSeconds(0);
+    setError(null);
+    setPhase("idle");
+  }
+
+  async function useThisTake() {
+    if (!videoBlobRef.current) return;
+    setBusy(true);
+    setError(null);
+    // The poster frame is captured asynchronously in captureFrame(); give
+    // it a moment on a slow device rather than uploading with no poster.
+    for (let i = 0; i < 20 && !posterBlobRef.current; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (!posterBlobRef.current) {
+      setBusy(false);
+      setError("Couldn't capture a preview frame. Please try recording again.");
+      return;
+    }
+    const result = await uploadVideoPrompt(supabase, videoBlobRef.current, posterBlobRef.current, {
+      durationMs: elapsedSeconds * 1000,
+      promptText,
+    });
+    setBusy(false);
+    if (result.error) {
+      setError(friendlyErrorMessage(result.error));
+      return;
+    }
+    setSavedPromptText(promptText);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrlRef.current = null;
+    setPreviewUrl(null);
+    videoBlobRef.current = null;
+    posterBlobRef.current = null;
+    setPhase("saved");
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded border border-gray-200 p-3">
+      <div className="text-sm font-medium">Video prompt (optional)</div>
+      <p className="text-xs text-gray-500">
+        Up to 30 seconds, recorded here. No filters, no imported files. Unlimited retakes, and you review it before it
+        saves.
+      </p>
+
+      {phase === "unsupported" && (
+        <p className="text-xs text-gray-500">Video recording isn&apos;t supported in this browser. You can skip this.</p>
+      )}
+
+      {phase === "idle" && (
+        <div className="flex flex-col gap-2">
+          <label className="text-xs text-gray-500">
+            Choose a prompt
+            <select
+              className="mt-1 block w-full rounded border border-gray-300 p-2 text-sm"
+              value={promptText}
+              onChange={(e) => setPromptText(e.target.value)}
+            >
+              {VIDEO_PROMPT_QUESTIONS.map((q) => (
+                <option key={q} value={q}>
+                  {q}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={startRecording}
+            className="rounded border border-gray-300 py-2 text-sm hover:border-gray-400"
+          >
+            ● Record (up to 30 sec)
+          </button>
+        </div>
+      )}
+
+      {phase === "recording" && (
+        <div className="flex flex-col items-center gap-2">
+          <video ref={liveVideoRef} muted playsInline className="aspect-[4/3] w-full rounded bg-black object-cover" />
+          <span className="text-sm font-mono text-red-600">
+            ● 0:{String(elapsedSeconds).padStart(2, "0")} / 0:{MAX_VIDEO_PROMPT_SECONDS}
+          </span>
+          <button type="button" onClick={stopRecording} className="rounded border border-red-300 px-4 py-2 text-sm text-red-600">
+            Stop
+          </button>
+        </div>
+      )}
+
+      {phase === "review" && previewUrl && (
+        <div className="flex flex-col gap-2">
+          <video src={previewUrl} controls playsInline className="aspect-[4/3] w-full rounded bg-black" />
+          <div className="flex gap-2">
+            <button type="button" onClick={redo} className="flex-1 rounded border border-gray-300 py-2 text-sm" disabled={busy}>
+              Redo
+            </button>
+            <button
+              type="button"
+              onClick={useThisTake}
+              className="flex-1 rounded bg-gray-900 py-2 text-sm text-white disabled:opacity-50"
+              disabled={busy}
+            >
+              {busy ? "Saving..." : "Use this take"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {phase === "saved" && savedPromptText && (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-gray-700">Saved: &ldquo;{savedPromptText}&rdquo;</p>
+          <button type="button" onClick={redo} className="rounded border border-gray-300 py-2 text-sm">
+            Record a different take
+          </button>
+        </div>
+      )}
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );
 }

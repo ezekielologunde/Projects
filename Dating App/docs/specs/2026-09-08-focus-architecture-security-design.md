@@ -157,6 +157,34 @@ A second, independently-built clickable prototype (a professional design-tool ex
 - **Explicitly not adopted from the same source:** the other prototype's post-date questions are framed as continuously revisable and feed its own matching algorithm ("All your comments help us know who your type is"). Focus's version is a one-time, private read for the person themselves and for `_purge`-scoped abuse signals only (7.20) — it does not feed reciprocal_score, does not become a hidden preference-learning signal, and is never revisited or asked again for the same connection. Turning it into an implicit ranking input would contradict the "boring, explainable" ranking philosophy (7.3-7.4) and the same non-scoring stance already applied to height and heritage (0.9, 0.11); declined for that reason, not overlooked.
 - **Not adopted, and not applicable:** a persistent "Discover" tab that disappears from the tab bar when a person becomes unavailable. Focus has no persistent discover surface to begin with — section 2.2's daily loop is a small, capped set of introductions on Home, not a browsable tab (Home already becomes an entirely different, discovery-free screen once Focused, per 2.2 and the Focused-state screen) — so the underlying principle (no way to browse while Focused) is already satisfied more strongly than hiding a tab would achieve. No change made.
 
+### 0.14 The video prompt's actual upload mechanics (2026-09-09)
+
+Section 0.12 specified the video prompt's shape (30 seconds, in-app only, record-review-publish) and flagged it as "genuinely new engineering scope... not yet built," but deliberately left its Storage-and-database mechanics undesigned. This is that design, worked out before any code, per the standing review order — chosen to extend the existing photo upload pipeline (sections 7.16, 7.17, 7.30) as closely as its one real difference allows, rather than invent a parallel one.
+
+**The one real difference: no Sharp-equivalent for video.** The photo pipeline's actual security backstop isn't the client's honesty, it's the server: Sharp decodes the real bytes, confirms they're actually an image, strips metadata, and re-encodes at a bounded size, so nothing a browser claims about a photo has to be trusted. Video has no equivalent step available in a Vercel function without a native `ffmpeg` dependency, which this phase does not take on. Given that, the server can still do two things without transcoding: confirm the bytes are actually a video container it recognizes (magic-byte sniffing, the same principle as Sharp's format check, just without a decode), and cap the byte size tightly enough that a 30-second clip is the only thing that fits regardless of what the client's own timer did or didn't enforce. A modest, web-recorded 30-second clip (VP9/Opus or H.264/AAC at ordinary `MediaRecorder` bitrates) runs 4-10 MB; a 25 MB ceiling comfortably covers real device variance while making a much-longer clip arithmetically unable to fit, the same shape of guarantee `MAX_DECODED_PIXELS` already gives the photo path against a decompression bomb, not a precise duration check, and documented as exactly that tradeoff rather than implied to be more than it is.
+
+**Poster frame, reusing the part that already has a security backstop.** A video must never autoplay (section 0.12) and needs a static image to show before anyone presses play. Rather than extract a frame server-side (which would need a video decode Focus doesn't otherwise do), the client captures one canvas frame from its own just-recorded clip and sends it alongside the video as an ordinary image. The server runs that frame through the exact same Sharp validation, resize, and WebP re-encode as any photo — it just writes the result next to the video instead of into `photos`, since a video's poster isn't one of the profile's six photo slots and shouldn't count against that limit or appear in the grid.
+
+**Mechanics:**
+
+- `upload_kind` gains a fourth value, `video_prompt` (section 5.1). Unlike `photo`, it needs no `position` and unlike `selfie`, no `verification_id` — a profile has at most one video prompt.
+- `upload_tickets` gains `poster_object_path text`, nullable, required exactly when `kind = 'video_prompt'` (a CHECK mirroring the existing `photo_ticket_needs_position`/`selfie_ticket_needs_verification` pair). `create_upload_ticket` (7.16), for this kind, additionally generates and returns a second `incoming` path for the poster frame, and `begin_upload` (7.30), for this kind, additionally computes and returns both final destination paths.
+- A new table, `video_prompts` (section 5.2): one row per profile (`profile_id uuid PK`), `video_path` (`video-prompts/{profile_id}/{id}.webm` or `.mp4`, whichever container the upload actually turned out to be) and `poster_path` (`video-prompts/{profile_id}/{id}.webp`, always — the poster is normalized to WebP by Sharp regardless of the video's own container), server-generated, same path-pattern CHECK discipline as `photos.storage_path`, `poster_width`/`poster_height` smallint, `duration_ms integer` (client-reported, display-only — "0:18" next to the play button — and explicitly not a security control; the byte-size ceiling above is what actually bounds length), `prompt_text` (the chosen prompt, mirroring how `profiles.prompts` stores its own question text rather than just an id), `created_at`. RLS: `video_prompts_select_viewable` under the same `can_view_profile` gate as `photos`; `video_prompts_delete_own` for the owner, matching `photos_delete_own`, even though no v1 screen exposes a bare "remove" action yet (section 15) — consistent with every other asset table having an owner-delete escape hatch regardless of whether the current UI surfaces it.
+- Two new Storage buckets (section 6.4), `video-incoming` (own 25 MB ceiling and a `video/webm`, `video/mp4` allowlist, kept separate from the existing `incoming` bucket precisely so raising a size ceiling for video never also raises what an attacker can throw at the image path) and `video-prompts` (final, private, same read/write/delete shape as `photos`).
+- A new function, `public.process_video_prompt_upload(ticket_id uuid, video_format text, poster_width smallint, poster_height smallint, duration_ms integer, prompt_text text) returns jsonb`, parallel to `process_upload` (7.17) but upserting `video_prompts` (unique on `profile_id`, so re-recording replaces the existing row) instead of inserting into `photos`, and returning both old paths (video and poster) for the calling route to delete from Storage, the same orphan-cleanup shape `process_upload` already uses for a replaced photo. `create_upload_ticket` and `begin_upload` are extended in place rather than forked, since their preconditions and shapes differ from the photo/selfie case only in which optional fields are populated.
+- The calling route (mirroring `processUploadedImage`, section 4.3): claim the ticket, download both raw objects from `video-incoming`/`incoming` with the secret key, sniff the video's magic bytes and reject anything that isn't a recognized `webm`/`mp4` container or exceeds 25 MB (`not_a_video`, `video_too_large`), run the poster through the same Sharp steps as an ordinary photo, write both processed objects to `video-prompts`, call `process_video_prompt_upload`, then delete both `incoming` originals and any orphaned previous video/poster the same way a replaced photo's old object is cleaned up today.
+
+No change to the daily loop, matching, or capacity mechanism — this is entirely Phase 1 profile/upload surface, so it is not gated by the Phase −1 legal review (section 14), which covers only the visibility and matching mechanism.
+
+### 0.15 Video prompt review cycle: code review, red-team, sane-mode (2026-09-09)
+
+The standing review order applied to section 0.14's implementation before it was considered done, the same three-pass cycle section 0.6 ran for the rest of Phase 1. One finding was serious enough to be worth naming plainly:
+
+- **The rebuilt `create_upload_ticket` silently reverted two already-fixed bugs.** Extending it for `video_prompt` was written against the *original* function body (`20260909010500_phase1_functions.sql`) rather than the version `20260909020000_phase1_review_fixes.sql`'s fix #8 had already superseded, which reintroduced, for every kind, not just video: a check-then-act race on the 20/day upload limit (a burst of concurrent calls could each read the same pre-increment count and all pass), and a dropped `unexpected_verification_id` guard on `photo` tickets. Neither regression was caught by the existing pgTAP suite, since neither behavior had a test — both do now (`30_phase1_video_prompt.sql`). Fixed by rebuilding the function on top of the already-fixed version instead, and this is now the explicit rule going forward: extending an existing `SECURITY DEFINER` function via `create or replace` must start from its current form, not its original migration, and a change like this should come with a regression test for exactly the fix it could have clobbered.
+- **A video actually recorded as MP4 (Safari; every other browser records WebM) would have been silently written to a `.webm`-named object with a `video/webm` Content-Type.** `looksLikeWebmOrMp4` (renamed `sniffVideoFormat`) already distinguished the two containers, but `begin_upload`'s destination path was a fixed `.webm` guess computed before any bytes exist to sniff, and nothing downstream ever corrected it. Fixed by having the calling route pass the real sniffed format to `process_video_prompt_upload` as a `video_format` parameter (7.17a, now `('webm', 'mp4')`-checked), which is what actually computes and owns the final path — `begin_upload`'s guess is now documented as exactly that, a placeholder the route doesn't use for this kind, not a claim its own destination pointer keeps. The `video_prompts.video_path` CHECK and the `video-prompts` bucket's `allowed_mime_types` were widened to match.
+- **Two smaller client-side fixes**, from the same review: the recorded clip's object URL is now revoked (via a ref, since the unmount cleanup effect's closure can't see a later state update) if a person leaves mid-review without choosing Redo or Use this take; and Record/Stop both gained a re-entrancy guard, since a double-click could previously orphan a `MediaStream` (a second `getUserMedia()` call racing the first) or throw `InvalidStateError` (stopping an already-inactive `MediaRecorder`).
+- **Not fixed here, flagged separately:** the spec's own scheduled-jobs table (7.25) has listed `purge_incoming` since Phase 1 was first built, but it was never actually implemented — a pre-existing gap this feature's own red-team pass surfaced, not something it introduced, though the two-raw-object-per-ticket shape roughly triples the orphaned-bytes exposure of an abandoned upload compared to a photo. Real cleanup-job work, out of scope for this pass; tracked separately rather than folded in here.
+
 ---
 
 ## 1. Purpose, goals, non-goals
@@ -577,7 +605,7 @@ report_resolution: cleared | confirmed
 verification_decision: approved | rejected
 consent_kind:     terms | privacy | sensitive_data | genotype_data
 consent_action:   accepted | withdrawn
-upload_kind:      photo | selfie
+upload_kind:      photo | selfie | video_prompt
 contact_method:   phone | email | whatsapp | signal | instagram | other
 ```
 
@@ -668,6 +696,20 @@ Trigger: max 6 rows per profile; position 1 required before status can become `p
 
 id, profile_id, pose_code (text), selfie_path (text, nullable after decision), submitted_at, decided_at, decision (nullable), reviewer_id (FK admins), note (up to 300). Max 3 submissions per day per profile (trigger).
 
+**video_prompts** (section 0.14; optional, at most one per profile)
+
+| Column | Type | Notes |
+|---|---|---|
+| profile_id | uuid PK FK | one row per profile; re-recording upserts this row |
+| video_path | text | `video-prompts/{profile_id}/{id}.webm` or `.mp4` (whichever container was actually sniffed from the upload, section 0.14/7.17a — never assumed), CHECK matches pattern, server-generated |
+| poster_path | text | `video-prompts/{profile_id}/{id}.webp`, CHECK matches pattern, server-generated |
+| poster_width, poster_height | smallint | |
+| duration_ms | integer | client-reported, display-only; not a security control (section 0.14) |
+| prompt_text | text | 1 to 200 chars, the chosen prompt question, mirroring `profiles.prompts`' own stored question text |
+| created_at | timestamptz | |
+
+RLS: `video_prompts_select_viewable` under `private.can_view_profile`, same as `photos`; `video_prompts_delete_own` for the row's own `profile_id`, same as `photos_delete_own`. No direct INSERT/UPDATE policy: written only by `process_video_prompt_upload()` (section 7.17a).
+
 **upload_tickets** (no direct user access at all; function-only, same pattern as `likes`)
 
 | Column | Type | Notes |
@@ -675,12 +717,13 @@ id, profile_id, pose_code (text), selfie_path (text, nullable after decision), s
 | id | uuid PK | |
 | user_id | uuid FK | |
 | kind | upload_kind | |
-| object_path | text | `incoming/{user_id}/{id}`, server-generated |
+| object_path | text | `incoming/{user_id}/{id}` for `photo`/`selfie`, `video-incoming/{user_id}/{id}` for `video_prompt`; server-generated |
+| poster_object_path | text | nullable; only for `kind = 'video_prompt'`; `incoming/{user_id}/{id}-poster`, server-generated |
 | position | smallint | nullable, 1..6, only for `kind = 'photo'` |
 | verification_id | uuid FK | nullable, only for `kind = 'selfie'`, must belong to `user_id` and be undecided |
 | created_at, expires_at | timestamptz | `expires_at = created_at + 5 minutes`, independent of the underlying Supabase URL's own 2-hour validity |
 | claimed_at | timestamptz | nullable; set by `begin_upload()` (section 7.30) the moment the processing route starts, before any Storage or Sharp work; distinct from `used_at` so "claimed, in progress" and "fully processed" are never conflated |
-| used_at | timestamptz | nullable; set by `process_upload()` (section 7.17) only after the processed image is written and the `photos`/`verifications` row exists |
+| used_at | timestamptz | nullable; set by `process_upload()`/`process_video_prompt_upload()` only after the processed asset is written and the `photos`/`verifications`/`video_prompts` row exists |
 
 Index `(user_id, used_at)`; purged daily once used or more than 24 hours past `expires_at`.
 
@@ -912,8 +955,10 @@ All tables are in `public`. Nothing below grants access to a `private`-schema ob
 | incoming (private) | secret key only (processing route) | owner, via a short-lived Supabase signed upload URL issued alongside an `upload_tickets` row; bucket-level 15 MB size ceiling and image-only MIME allowlist; the Supabase URL itself is valid 2 hours by vendor design, and the paired `upload_tickets` row's own 5-minute expiry is what actually bounds the application's processing window | secret key (processing route, immediately after use; cron safety net after 1 hour) |
 | photos (private) | `private.can_view_profile(auth.uid(), folder_owner)` | secret key only (processing route) | owner of folder, and secret key (account purge) |
 | verification (private) | `private.is_admin_mfa` only | secret key only (processing route) | secret key (review function triggers deletion; also the account purge route) |
+| video-incoming (private) | secret key only (processing route) | owner, via a signed upload URL, same as `incoming`; its own 25 MB size ceiling and `video/webm`/`video/mp4` allowlist, kept separate from `incoming` so this ceiling never applies to the image path (section 0.14) | secret key (processing route; cron safety net after 1 hour) |
+| video-prompts (private) | `private.can_view_profile(auth.uid(), folder_owner)` | secret key only (processing route) | owner of folder, and secret key (account purge) |
 
-Object paths for `incoming` are the ticket's own `object_path`, generated server-side; the client never chooses or later re-supplies a path. Public URL access is disabled on all three buckets.
+Object paths for `incoming`/`video-incoming` are the ticket's own `object_path`/`poster_object_path`, generated server-side; the client never chooses or later re-supplies a path. Public URL access is disabled on all five buckets.
 
 ### 6.5 Function grants and the private schema
 
@@ -927,7 +972,7 @@ dont_show_again, submit_feed_feedback, reconsider_passed_profiles,
 open_to_new_on, open_to_new_off, share_contact,
 create_date_plan, get_date_plan, delete_date_plan,
 start_verification, submit_for_review,
-create_upload_ticket, begin_upload, process_upload, record_consent, am_i_admin, am_i_admin_identity,
+create_upload_ticket, begin_upload, process_upload, process_video_prompt_upload, record_consent, am_i_admin, am_i_admin_identity,
 admin_review_verification, admin_review_report, admin_ban_user, admin_reinstate_user
 ```
 
@@ -1090,16 +1135,24 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 
 ### 7.16 `public.create_upload_ticket(kind upload_kind, position smallint, verification_id uuid) returns jsonb`
 
-- Preconditions: for `kind = 'photo'`, `position` between 1 and 6; for `kind = 'selfie'`, `verification_id` must reference a row owned by the caller with `decision IS NULL`. Rate-limited alongside the existing photo and verification daily caps (section 9.4).
-- Effects: insert an `upload_tickets` row with a server-generated `object_path` under `incoming/{caller}/{ticketId}` and `expires_at = now() + 5 minutes`; request a Supabase signed upload URL for that path (which will itself be valid 2 hours, a vendor-fixed value this function does not control and does not rely on for its own security guarantee). Return `{ ticketId, uploadUrl }`.
+- Preconditions: for `kind = 'photo'`, `position` between 1 and 6; for `kind = 'selfie'`, `verification_id` must reference a row owned by the caller with `decision IS NULL`; for `kind = 'video_prompt'`, neither `position` nor `verification_id` is used (a profile has at most one). Rate-limited alongside the existing photo and verification daily caps (section 9.4).
+- Effects: insert an `upload_tickets` row with a server-generated `object_path` — under `incoming/{caller}/{ticketId}` for `photo`/`selfie`, or `video-incoming/{caller}/{ticketId}` for `video_prompt` — and, only for `video_prompt`, an additional `poster_object_path` under `incoming/{caller}/{ticketId}-poster`; `expires_at = now() + 5 minutes`. Returns `{ ticketId, objectPath }`, plus `posterObjectPath` for `video_prompt`; the calling route requests its own Supabase signed upload URL for each returned path (each itself valid 2 hours, a vendor-fixed value this function does not control and does not rely on for its own security guarantee) — this function only reserves the path and the ticket, it never calls Storage itself.
 
 ### 7.17 `public.process_upload(ticket_id uuid, width smallint, height smallint) returns jsonb`
 
 Split into two functions from a single `process_upload` in earlier drafts, which described one function doing both a JWT-gated row check and secret-key Storage work in the same breath, an impossible combination for a single Postgres function to actually perform (Sharp-based image decoding runs in Node.js, not Postgres, and `upload_tickets` grants nothing directly selectable, so the calling route cannot even read `object_path` without a function to hand it over first). The two are `begin_upload` (section 7.30), called before any Storage work, and this function, called after.
 
-- Preconditions: ticket exists, `user_id = auth.uid()`, `claimed_at IS NOT NULL` (via `begin_upload`), `used_at IS NULL`.
+- Preconditions: ticket exists, `user_id = auth.uid()`, `claimed_at IS NOT NULL` (via `begin_upload`), `used_at IS NULL`, `kind IN ('photo', 'selfie')` (a `video_prompt` ticket is finished by 7.17a instead).
 - Effects: insert the `photos` row (server-generated id, `storage_path = photos/{caller}/{id}.webp`, the given `width`/`height`) if `ticket.kind = 'photo'`, at `ticket.position`; or set `verifications.selfie_path` for `ticket.verification_id` if `ticket.kind = 'selfie'`. Set `used_at = now()`. This function only records that a correctly processed image already exists at the expected path; it never touches Storage itself. The calling route is responsible for having already downloaded, validated, decoded, stripped, resized, re-encoded, and written the object with the secret key, and for deleting the `incoming` original, before calling this function; if any of that fails, this function is never called and the ticket simply expires unused (section 7.19's `purge_incoming` and `purge_upload_tickets` clean up the orphaned original).
-- Errors: `ticket_not_found`, `not_claimed`, `ticket_used`.
+- Errors: `ticket_not_found`, `not_claimed`, `ticket_used`, `wrong_kind`.
+
+### 7.17a `public.process_video_prompt_upload(ticket_id uuid, video_format text, poster_width smallint, poster_height smallint, duration_ms integer, prompt_text text) returns jsonb`
+
+Parallel to 7.17, for `kind = 'video_prompt'` tickets only (section 0.14). Kept as a separate function rather than a branch inside `process_upload` because its effect is a different table with different upsert semantics, not an `insert ... on conflict (profile_id, position)` like a replaced photo.
+
+- Preconditions: ticket exists, `user_id = auth.uid()`, `kind = 'video_prompt'`, `claimed_at IS NOT NULL`, `used_at IS NULL`, `prompt_text` 1-200 chars, `video_format IN ('webm', 'mp4')`.
+- Effects: computes `video_path` as `video-prompts/{caller}/{ticket_id}.{video_format}` and `poster_path` as `video-prompts/{caller}/{ticket_id}.webp`, then upserts the caller's `video_prompts` row (unique on `profile_id`, so re-recording replaces it) with those paths and the given `poster_width`/`poster_height`/`duration_ms`/`prompt_text`. `video_format` cannot be a fixed `.webm` guess the way `begin_upload` (7.30) has to make one before any bytes exist, because MediaRecorder produces WebM everywhere except Safari, which produces MP4 (section 0.14): the calling route sniffs the real container from the downloaded bytes and passes the result here, and this function is what actually derives the final path from it, exactly the same "server derives the path, the client only names an already-validated fact about it" discipline `object_path` itself relies on elsewhere — `video_format` is a fact about bytes the route already inspected, not a path the client gets to choose. `prompt_text`, `poster_width`, `poster_height`, and `duration_ms` are accepted directly as parameters the same way, the same trust level as `width`/`height` in 7.17: self-disclosed content or measurements, not authorization decisions. Set `used_at = now()`. Like 7.17, this function only records that already-validated, already-written objects exist at the expected paths; it never touches Storage. Returns `{ videoPath, posterPath, oldVideoPath, oldPosterPath }`, the last two non-null only when this replaces an existing video prompt, for the calling route to delete from `video-prompts` the same way `process_upload` returns `oldStoragePath` for a replaced photo.
+- Errors: `ticket_not_found`, `not_claimed`, `ticket_used`, `wrong_kind`, `invalid_prompt_text`, `invalid_video_format`.
 
 ### 7.18 `public.record_consent(kind consent_kind, version text, action consent_action) returns void`
 
@@ -1182,7 +1235,7 @@ Nothing above actually moves a profile from `onboarding` to `pending_review` eit
 Called by the processing route immediately before any Storage or Sharp work, using the caller's own JWT, not the secret key; this is the check section 4.3 already described as happening "under the user's own JWT" before "the actual byte-moving happens with the secret key."
 
 - Preconditions: ticket exists, `user_id = auth.uid()`, `claimed_at IS NULL`, `used_at IS NULL`, `expires_at > now()`.
-- Effects: set `claimed_at = now()` (an atomic `UPDATE ... WHERE claimed_at IS NULL RETURNING ...`, so two concurrent calls for the same ticket cannot both proceed). Return `{ kind, object_path, position, verification_id }` read from the ticket row; this is the only way the route learns which object to fetch, closing the IDOR surface an earlier draft left open by accepting an arbitrary client-supplied `objectPath` instead of deriving it from a ticket the caller does not control the contents of.
+- Effects: set `claimed_at = now()` (an atomic `UPDATE ... WHERE claimed_at IS NULL RETURNING ...`, so two concurrent calls for the same ticket cannot both proceed). Return `{ kind, object_path, position, verification_id }` read from the ticket row; this is the only way the route learns which object to fetch, closing the IDOR surface an earlier draft left open by accepting an arbitrary client-supplied `objectPath` instead of deriving it from a ticket the caller does not control the contents of. For `kind = 'video_prompt'`, additionally returns `poster_object_path`, `dest_path` (`video-prompts/{caller}/{id}.webm`), and `poster_dest_path` (`video-prompts/{caller}/{id}.webp`), computed the same deterministic way `photos`/`verification` destination paths already are for the other two kinds.
 - Errors: `ticket_not_found`, `ticket_expired`, `already_claimed`, `ticket_used`.
 
 ---
