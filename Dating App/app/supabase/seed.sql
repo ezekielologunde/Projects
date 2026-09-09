@@ -1,0 +1,1 @@
+-- Local development seed data. Never contains real people (spec section 10.2).

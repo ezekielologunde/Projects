@@ -1,0 +1,88 @@
+name: Focus CI
+
+on:
+  pull_request:
+    paths:
+      - "Dating App/app/**"
+      - ".github/workflows/focus-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Dating App/app/**"
+      - ".github/workflows/focus-ci.yml"
+
+defaults:
+  run:
+    working-directory: Dating App/app
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: "Dating App/app/pnpm-lock.yaml"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.117.0
+
+      # Spec section 11.1: pgTAP tests, including that every function this document
+      # designates `private` is unreachable through the Data API. Currently zero
+      # migrations exist (Phase 0), so this step passing with no tests is the
+      # expected, correct result until Phase 1 adds the first schema.
+      - name: Start local Supabase stack and run database tests
+        run: |
+          supabase start
+          supabase test db
+
+      - name: Run application tests
+        run: pnpm test --if-present
+
+      - name: Build
+        run: pnpm build
+
+      # Spec section 9.7: the client bundle must never contain the secret key or
+      # its prefix, and never the legacy service_role string as a belt-and-braces
+      # check even though this project is built on the new key model from day one.
+      - name: Verify no secret key material in the client bundle
+        run: |
+          if grep -R "sb_secret_" .next/static 2>/dev/null; then
+            echo "::error::sb_secret_ prefixed string found in client bundle"
+            exit 1
+          fi
+          if grep -R "service_role" .next/static 2>/dev/null; then
+            echo "::error::service_role string found in client bundle"
+            exit 1
+          fi
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod || true # advisory until the first release; tighten in Phase 4
+
+      # Spec section 10.2: an expand migration may run automatically; a contract
+      # migration never does, and never lands in the same PR as application code.
+      - name: Reject contract migrations mixed with application code
+        run: |
+          if git diff --name-only origin/main...HEAD -- supabase/migrations | grep -i "_contract_"; then
+            if git diff --name-only origin/main...HEAD | grep -v "^Dating App/app/supabase/migrations/"; then
+              echo "::error::A contract migration cannot be merged alongside application code changes (spec section 10.2)."
+              exit 1
+            fi
+          fi
