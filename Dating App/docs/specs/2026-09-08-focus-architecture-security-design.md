@@ -348,7 +348,7 @@ External
 **Photo or selfie upload.**
 1. Client calls server action `createUploadTicket(kind, position?, verificationId?)`. Server inserts an `upload_tickets` row (5-minute application expiry) and requests a Supabase Storage signed upload URL for `incoming/{userId}/{ticketId}` (a Supabase-fixed 2-hour window, unrelated to and longer than the ticket's own expiry). Returns the URL and the ticket id.
 2. Client uploads the raw file bytes directly to Supabase Storage using that URL. This never touches a Vercel function body, so Vercel's 4.5 MB function payload limit does not apply; the `incoming` bucket itself enforces a 15 MB ceiling and an image-only MIME allowlist as a first filter.
-3. Client calls server action `processUpload(ticketId)`, passing nothing else. The route first calls the `public` RPC `begin_upload(ticketId)` under the user's own JWT, which claims the ticket and returns its `kind`, `object_path`, `position`, and `verification_id`, the only way the route learns any of this, never from a client-supplied path (section 7.28). The route then, using the secret key: downloads the object at that path; sniffs real file type from bytes (rejects non-images regardless of extension or declared MIME); decodes with `sharp` behind a maximum-decoded-pixel-count guard; strips all metadata including GPS; resizes to a maximum of 1600 px (1200 px for selfies) on the long edge; re-encodes as WebP; writes to a server-generated canonical path (`photos/{userId}/{newPhotoId}.webp` or `verification/{userId}/{ticket.verification_id}.webp`); deletes the `incoming` object. Finally the route calls the `public` RPC `process_upload(ticketId, width, height)` under the user's own JWT again, which inserts or updates the `photos` or `verifications` row and marks the ticket `used_at = now()` (section 7.17). If any step before that last call fails, the ticket is simply left claimed-but-unused and expires; nothing is left half-written.
+3. Client calls server action `processUpload(ticketId)`, passing nothing else. The route first calls the `public` RPC `begin_upload(ticketId)` under the user's own JWT, which claims the ticket and returns its `kind`, `object_path`, `position`, and `verification_id`, the only way the route learns any of this, never from a client-supplied path (section 7.30). The route then, using the secret key: downloads the object at that path; sniffs real file type from bytes (rejects non-images regardless of extension or declared MIME); decodes with `sharp` behind a maximum-decoded-pixel-count guard; strips all metadata including GPS; resizes to a maximum of 1600 px (1200 px for selfies) on the long edge; re-encodes as WebP; writes to a server-generated canonical path (`photos/{userId}/{newPhotoId}.webp` or `verification/{userId}/{ticket.verification_id}.webp`); deletes the `incoming` object. Finally the route calls the `public` RPC `process_upload(ticketId, width, height)` under the user's own JWT again, which inserts or updates the `photos` or `verifications` row and marks the ticket `used_at = now()` (section 7.17). If any step before that last call fails, the ticket is simply left claimed-but-unused and expires; nothing is left half-written.
 4. A cron job purges anything left in `incoming` older than one hour, as a safety net for a client that uploads but never completes step 3, and a separate daily job removes used or long-expired ticket rows.
 
 The original bytes are held only in the private `incoming` bucket for the seconds between upload and processing, then deleted.
@@ -492,7 +492,7 @@ id, profile_id, pose_code (text), selfie_path (text, nullable after decision), s
 | position | smallint | nullable, 1..6, only for `kind = 'photo'` |
 | verification_id | uuid FK | nullable, only for `kind = 'selfie'`, must belong to `user_id` and be undecided |
 | created_at, expires_at | timestamptz | `expires_at = created_at + 5 minutes`, independent of the underlying Supabase URL's own 2-hour validity |
-| claimed_at | timestamptz | nullable; set by `begin_upload()` (section 7.28) the moment the processing route starts, before any Storage or Sharp work; distinct from `used_at` so "claimed, in progress" and "fully processed" are never conflated |
+| claimed_at | timestamptz | nullable; set by `begin_upload()` (section 7.30) the moment the processing route starts, before any Storage or Sharp work; distinct from `used_at` so "claimed, in progress" and "fully processed" are never conflated |
 | used_at | timestamptz | nullable; set by `process_upload()` (section 7.17) only after the processed image is written and the `photos`/`verifications` row exists |
 
 Index `(user_id, used_at)`; purged daily once used or more than 24 hours past `expires_at`.
@@ -738,6 +738,7 @@ pause_account, unpause_account, record_meeting_checkin,
 dont_show_again, submit_feed_feedback, reconsider_passed_profiles,
 focus_now_on, focus_now_off, share_contact,
 create_date_plan, get_date_plan, delete_date_plan,
+start_verification, submit_for_review,
 create_upload_ticket, begin_upload, process_upload, record_consent, am_i_admin,
 admin_review_verification, admin_review_report, admin_ban_user, admin_reinstate_user
 ```
@@ -900,7 +901,7 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 
 ### 7.17 `public.process_upload(ticket_id uuid, width smallint, height smallint) returns jsonb`
 
-Split into two functions from a single `process_upload` in earlier drafts, which described one function doing both a JWT-gated row check and secret-key Storage work in the same breath, an impossible combination for a single Postgres function to actually perform (Sharp-based image decoding runs in Node.js, not Postgres, and `upload_tickets` grants nothing directly selectable, so the calling route cannot even read `object_path` without a function to hand it over first). The two are `begin_upload` (section 7.28), called before any Storage work, and this function, called after.
+Split into two functions from a single `process_upload` in earlier drafts, which described one function doing both a JWT-gated row check and secret-key Storage work in the same breath, an impossible combination for a single Postgres function to actually perform (Sharp-based image decoding runs in Node.js, not Postgres, and `upload_tickets` grants nothing directly selectable, so the calling route cannot even read `object_path` without a function to hand it over first). The two are `begin_upload` (section 7.30), called before any Storage work, and this function, called after.
 
 - Preconditions: ticket exists, `user_id = auth.uid()`, `claimed_at IS NOT NULL` (via `begin_upload`), `used_at IS NULL`.
 - Effects: insert the `photos` row (server-generated id, `storage_path = photos/{caller}/{id}.webp`, the given `width`/`height`) if `ticket.kind = 'photo'`, at `ticket.position`; or set `verifications.selfie_path` for `ticket.verification_id` if `ticket.kind = 'selfie'`. Set `used_at = now()`. This function only records that a correctly processed image already exists at the expected path; it never touches Storage itself. The calling route is responsible for having already downloaded, validated, decoded, stripped, resized, re-encoded, and written the object with the secret key, and for deleting the `incoming` original, before calling this function; if any of that fails, this function is never called and the ticket simply expires unused (section 7.19's `purge_incoming` and `purge_upload_tickets` clean up the orphaned original).
@@ -967,7 +968,22 @@ Split into two functions from a single `process_upload` in earlier drafts, which
 - Preconditions: caller is a member of an `active` connection; `confirmed = true` is required (the client only sets this after showing the warning in section 2.8; the function itself has no way to know the warning was read, so this is a deliberate, minimal check rather than a real enforcement of informed consent, which is ultimately a UX responsibility); `value` 1 to 200 characters.
 - Effects: insert an ordinary message (`is_system = false`, `sender_id = caller`) containing a formatted line naming the method and the value, so it is delivered, stored, and later purged under exactly the same rules as any other message in that connection (section 8.4), never duplicated elsewhere. Separately, insert a `contact_share_events` row recording only the method and who shared, never the value. Sharing is one-directional by construction: this function only ever grants the recipient the caller's information; the recipient's own information is unaffected and requires their own separate call to reciprocate, if they choose to.
 
-### 7.28 `public.begin_upload(ticket_id uuid) returns jsonb`
+### 7.28 `public.start_verification() returns jsonb`
+
+Nothing in the functions above actually creates a `verifications` row; this is the gap that does it, found while implementing Phase 1.
+
+- Preconditions: caller `onboarding`; the `verifications` table's own trigger enforces at most 3 submissions per day.
+- Effects: insert a `verifications` row with a pose code drawn at random from a small fixed set (look left, look right, peace sign, thumbs up, touch your nose), `submitted_at = now()`, `selfie_path` and `decision` null. Return `{ verificationId, poseCode }` so the client can show the instruction and immediately follow with `create_upload_ticket('selfie', verificationId)`. A verification attempt with no photo ever uploaded simply sits unresolved and does not block a later attempt; it is not itself an error.
+
+### 7.29 `public.submit_for_review() returns void`
+
+Nothing above actually moves a profile from `onboarding` to `pending_review` either; section 2.1 describes the seven onboarding steps but not the function that closes step 7. Found and fixed alongside 7.28.
+
+- Preconditions: caller `onboarding`; `profiles.first_name`, `gender`, `city_label` are set; `profile_sensitive.seeking` is set; `profile_answers.goal` is set; a `photos` row exists at position 1; the most recent `consent_events` for `terms`, `privacy`, and `sensitive_data` are all `accepted` at the current required version (section 8.1); at least one `verifications` row belonging to the caller has `selfie_path is not null` and `decision is null` (a selfie was actually uploaded and is awaiting review; submitting with no photo at all has nothing for an admin to look at). Any missing precondition returns a specific error naming what's missing rather than a generic failure, since this is the one gate a genuine new user needs to get past on their own.
+- Effects: bypass the profile-immutable-columns guard (this function is the one legitimate place outside `admin_review_verification` that changes `profiles.status`) and set `status = 'pending_review'`.
+- Errors: `already_submitted`, `missing_basics`, `missing_non_negotiables`, `missing_photo`, `missing_consent`, `missing_verification_photo`.
+
+### 7.30 `public.begin_upload(ticket_id uuid) returns jsonb`
 
 Called by the processing route immediately before any Storage or Sharp work, using the caller's own JWT, not the secret key; this is the check section 4.3 already described as happening "under the user's own JWT" before "the actual byte-moving happens with the secret key."
 
@@ -1327,8 +1343,9 @@ Each phase ends with the three review passes in section 12.
 
 ### Phase 1: Foundation
 
-- Migrations (all expand): enums, `profiles`, `profile_sensitive`, `profile_private`, `profile_answers`, `profile_heritage`, `preferences`, `heritage_preferences`, `photos`, `verifications`, `upload_tickets`, `consent_events`, `admins`, `admin_audit`, `user_daily`. RLS for all. `private.is_admin()`, `private.is_admin_mfa()`, `private.normalize_key()`, `public.am_i_admin()`, `public.create_upload_ticket()`, `public.begin_upload()`, `public.process_upload()`, `public.record_consent()`, triggers for lengths and counts.
-- Auth flows including admin TOTP enrollment, onboarding screens (with the two-tier append-only consent from section 8.1), the ticket-and-process upload pipeline, selfie capture, admin verification queue behind `is_admin_mfa`.
+- Migrations (all expand): enums, `profiles`, `profile_sensitive`, `profile_private`, `profile_answers`, `profile_heritage`, `preferences`, `heritage_preferences`, `photos`, `verifications`, `upload_tickets`, `consent_events`, `admins`, `admin_audit`, `user_daily`. RLS for all. `private.is_admin()`, `private.is_admin_mfa()`, `private.normalize_key()`, `public.am_i_admin()`, `public.create_upload_ticket()`, `public.begin_upload()`, `public.process_upload()`, `public.record_consent()`, `public.start_verification()`, `public.submit_for_review()`, triggers for lengths and counts.
+- `private.can_view_profile()` is introduced here in a deliberately partial form: only the self and admin cases from section 6.2 are possible, since the connection, feed-item, and surfaced-like cases depend on tables that don't exist until Phase 2. This is correct for what Phase 1 actually needs (nobody can discover or match with anyone yet), not an oversight; Phase 2 extends the same function with `CREATE OR REPLACE`, purely additively. `private.available()` is not needed anywhere in Phase 1 and is deferred to Phase 2 entirely.
+- Auth flows including admin TOTP enrollment, onboarding screens (with the two-tier append-only consent from section 8.1), the pose-challenge-and-review verification flow (`start_verification`, the ticket-and-process upload pipeline, `submit_for_review`), admin verification queue behind `is_admin_mfa`.
 - Exit: a new user can complete onboarding and be approved by an aal2-enrolled admin; pgTAP covers every policy in this phase, including the `profile_sensitive` split, the admin MFA gate, and the private-schema unreachability test for every helper introduced so far.
 
 ### Phase 2: Core loop (gated by Phase −1)
