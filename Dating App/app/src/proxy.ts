@@ -22,8 +22,9 @@ function buildCsp(nonce: string, isDev: boolean): string {
     script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://challenges.cloudflare.com${isDev ? " 'unsafe-eval'" : ""};
     style-src 'self' 'unsafe-inline';
     img-src 'self' blob: data: ${supabaseOrigin};
+    media-src 'self' blob:;
     font-src 'self';
-    connect-src 'self' ${supabaseOrigin} ${supabaseWsOrigin} https://challenges.cloudflare.com;
+    connect-src 'self' blob: ${supabaseOrigin} ${supabaseWsOrigin} https://challenges.cloudflare.com;
     frame-src https://challenges.cloudflare.com;
     frame-ancestors 'none';
     base-uri 'self';
@@ -58,7 +59,7 @@ export function proxy(request: NextRequest) {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set(
     "Permissions-Policy",
-    "camera=(self), geolocation=(self), microphone=(), payment=()",
+    "camera=(self), geolocation=(self), microphone=(self), payment=()",
   );
 
   return response;
