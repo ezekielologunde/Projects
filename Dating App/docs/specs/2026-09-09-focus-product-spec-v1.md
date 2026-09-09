@@ -56,7 +56,7 @@ Capacity 3, starting from zero:
 
 If B: `2/3 FOCUSED` — no discovery, no new Likes, profile hidden, even though one slot is numerically open. This is the whole point of Focus Now existing as separate from capacity.
 
-If A, and Jessica connects: `3/3 FOCUSED` — automatically now, since capacity is reached. Every other pending Like, in both directions, expires the instant this happens (rule 3).
+If A, and Jessica connects: `3/3 FOCUSED` — automatically now, since capacity is reached. Every other pending Like, in both directions, expires the instant this happens (rule 3). This is **Starting Fresh**: the screen never names who expired or how many there were — not "your interest in Tolu and Rachel expired," just that discovery is now closed. Expiring is not rejecting; if the two people are ever independently available and compatible again later, Focus may introduce them like anyone else, with neither ever told the earlier Like existed.
 
 If Jessica's connection later ends: `2/3`, and Focus does **not** silently reopen discovery. It asks, plainly:
 
