@@ -1,0 +1,996 @@
+<title>Focus</title>
+<style>
+  :root{
+    --bg:#F4EFE8;
+    --surface:#FFFFFF;
+    --surface-2:#FBF6EF;
+    --ink:#241C1A;
+    --ink-muted:#6E6259;
+    --ink-faint:#A79A8C;
+    --line:#E4D9CB;
+    --accent:#8C3B4A;
+    --accent-ink:#FFFFFF;
+    --accent-soft:#F3DEE1;
+    --accent-soft-ink:#6E2733;
+    --safety:#A5551F;
+    --safety-soft:#F4E2D2;
+    --focus-ring:#8C3B4A;
+    --shadow: 0 30px 60px -25px rgba(36,28,26,0.35), 0 4px 12px -4px rgba(36,28,26,0.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1613;
+      --surface:#241D19;
+      --surface-2:#2C2420;
+      --ink:#F3EAE1;
+      --ink-muted:#B4A498;
+      --ink-faint:#7C7066;
+      --line:#3B322C;
+      --accent:#DD8A98;
+      --accent-ink:#241416;
+      --accent-soft:#3A2429;
+      --accent-soft-ink:#F3C7CE;
+      --safety:#E3A46B;
+      --safety-soft:#3B2A1B;
+      --shadow: 0 30px 60px -25px rgba(0,0,0,0.6), 0 4px 12px -4px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1613;
+    --surface:#241D19;
+    --surface-2:#2C2420;
+    --ink:#F3EAE1;
+    --ink-muted:#B4A498;
+    --ink-faint:#7C7066;
+    --line:#3B322C;
+    --accent:#DD8A98;
+    --accent-ink:#241416;
+    --accent-soft:#3A2429;
+    --accent-soft-ink:#F3C7CE;
+    --safety:#E3A46B;
+    --safety-soft:#3B2A1B;
+    --shadow: 0 30px 60px -25px rgba(0,0,0,0.6), 0 4px 12px -4px rgba(0,0,0,0.4);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Work Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+  h1,h2,h3{
+    font-family:'Fraunces', Georgia, 'Times New Roman', serif;
+    text-wrap:balance;
+    margin:0;
+    font-weight:600;
+    letter-spacing:-0.01em;
+  }
+  .mono{ font-family:'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-variant-numeric:tabular-nums; }
+  p{ margin:0; line-height:1.5; }
+  button{ font-family:inherit; cursor:pointer; }
+  button:focus-visible, a:focus-visible, input:focus-visible, [tabindex]:focus-visible{
+    outline:2px solid var(--focus-ring); outline-offset:2px;
+  }
+
+  /* ---------- top chrome (facilitator-facing) ---------- */
+  .top{
+    width:100%;
+    max-width:1100px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:18px 20px 8px;
+    gap:12px;
+  }
+  .brand{ display:flex; align-items:baseline; gap:8px; }
+  .brand .word{ font-family:'Fraunces', serif; font-size:20px; font-weight:600; }
+  .brand .sub{ font-size:12px; color:var(--ink-muted); }
+  .top-actions{ display:flex; gap:8px; align-items:center; }
+  .chip-btn{
+    background:var(--surface);
+    border:1px solid var(--line);
+    color:var(--ink);
+    border-radius:999px;
+    padding:8px 14px;
+    font-size:13px;
+    display:flex; align-items:center; gap:6px;
+  }
+  .chip-btn:hover{ border-color:var(--accent); }
+
+  /* ---------- stage / device frame ---------- */
+  .stage{
+    width:100%;
+    max-width:1100px;
+    flex:1;
+    display:flex;
+    justify-content:center;
+    padding:12px 20px 60px;
+    position:relative;
+  }
+  .device-wrap{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:16px;
+  }
+  .device{
+    width:390px;
+    height:780px;
+    background:var(--surface);
+    border-radius:44px;
+    box-shadow:var(--shadow);
+    border:1px solid var(--line);
+    position:relative;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+  .notch{
+    position:absolute; top:10px; left:50%; transform:translateX(-50%);
+    width:120px; height:22px; background:var(--ink); border-radius:12px; opacity:0.9; z-index:5;
+  }
+  .screen-header{
+    padding:44px 20px 10px;
+    display:flex; align-items:center; gap:10px; min-height:64px;
+    border-bottom:1px solid transparent;
+  }
+  .screen-header.bordered{ border-bottom-color:var(--line); }
+  .back-btn{
+    background:none; border:none; color:var(--ink-muted); font-size:20px; line-height:1;
+    width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+    border-radius:8px;
+  }
+  .back-btn:hover{ background:var(--surface-2); color:var(--ink); }
+  .screen-title{ font-size:15px; font-weight:600; color:var(--ink-muted); font-family:'Work Sans', sans-serif; letter-spacing:0.02em; }
+  .screen-body{
+    flex:1;
+    overflow-y:auto;
+    padding:6px 24px 28px;
+    display:flex;
+    flex-direction:column;
+  }
+  .screen-body::-webkit-scrollbar{ width:0; }
+
+  .progress-caption{
+    font-size:12px; color:var(--ink-faint); font-family:'Work Sans', sans-serif;
+    display:flex; gap:6px; align-items:center;
+  }
+
+  /* ---------- generic screen elements ---------- */
+  .eyebrow{
+    text-transform:uppercase; letter-spacing:0.12em; font-size:11px; color:var(--accent);
+    font-weight:600; margin-bottom:8px;
+  }
+  .lede{ color:var(--ink-muted); font-size:15px; margin-top:8px; }
+  .stack{ display:flex; flex-direction:column; gap:14px; }
+  .stack-lg{ display:flex; flex-direction:column; gap:22px; }
+  .spacer{ flex:1; }
+
+  .btn{
+    border-radius:14px;
+    padding:15px 18px;
+    font-size:15px;
+    font-weight:600;
+    border:1px solid transparent;
+    text-align:center;
+    width:100%;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .btn-primary{ background:var(--accent); color:var(--accent-ink); }
+  .btn-primary:hover{ filter:brightness(1.06); }
+  .btn-secondary{ background:var(--surface-2); color:var(--ink); border-color:var(--line); }
+  .btn-secondary:hover{ border-color:var(--accent); }
+  .btn-ghost{ background:none; color:var(--ink-muted); font-weight:500; }
+  .btn-ghost:hover{ color:var(--ink); }
+  .btn-danger{ background:none; color:var(--safety); border-color:var(--safety-soft); font-weight:600; }
+  .btn-row{ display:flex; gap:10px; }
+
+  .card{
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:18px;
+  }
+
+  .option{
+    display:flex; align-items:center; gap:14px;
+    background:var(--surface-2);
+    border:1.5px solid var(--line);
+    border-radius:16px;
+    padding:16px;
+    text-align:left;
+  }
+  .option.selected{ border-color:var(--accent); background:var(--accent-soft); }
+  .option .radio{
+    width:20px; height:20px; border-radius:50%; border:2px solid var(--ink-faint);
+    flex:none; position:relative;
+  }
+  .option.selected .radio{ border-color:var(--accent); }
+  .option.selected .radio::after{
+    content:""; position:absolute; inset:3px; border-radius:50%; background:var(--accent);
+  }
+  .option .opt-title{ font-weight:600; font-size:15px; }
+  .option .opt-sub{ font-size:12.5px; color:var(--ink-muted); margin-top:2px; }
+
+  .toggle-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:14px 0;
+  }
+  .toggle-copy .t-title{ font-weight:600; font-size:14.5px; }
+  .toggle-copy .t-sub{ font-size:12.5px; color:var(--ink-muted); margin-top:2px; max-width:230px; }
+  .switch{ width:44px; height:26px; border-radius:999px; background:var(--line); position:relative; flex:none; border:none; }
+  .switch::after{ content:""; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:var(--surface); transition:transform .15s ease; }
+  .switch.on{ background:var(--accent); }
+  .switch.on::after{ transform:translateX(18px); }
+  .check{
+    width:20px; height:20px; border-radius:6px; border:2px solid var(--ink-faint); flex:none; position:relative;
+  }
+  .check.on{ border-color:var(--accent); background:var(--accent); }
+  .check.on::after{ content:"&#10003;"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:13px; color:var(--accent-ink); }
+
+  /* capacity slots widget */
+  .slots{ display:flex; gap:8px; }
+  .slot{
+    width:34px; height:10px; border-radius:6px; background:var(--line); flex:1;
+  }
+  .slot.filled{ background:var(--accent); }
+  .cap-readout{ font-family:'JetBrains Mono', monospace; font-size:13px; color:var(--ink-muted); font-variant-numeric:tabular-nums; }
+
+  /* profile card */
+  .photo{
+    width:100%; aspect-ratio:4/5; border-radius:18px;
+    background:
+      radial-gradient(120% 90% at 30% 20%, rgba(140,59,74,0.35), transparent 60%),
+      linear-gradient(160deg, #C9A98F, #8C6E58 60%, #5B4636);
+    position:relative;
+    display:flex; align-items:flex-end;
+    overflow:hidden;
+  }
+  :root[data-theme="dark"] .photo, @media (prefers-color-scheme:dark){ .photo{} }
+  .photo .pick-badge{
+    position:absolute; top:12px; left:12px;
+    background:rgba(255,255,255,0.92); color:var(--accent-soft-ink);
+    font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase;
+    padding:6px 10px; border-radius:999px;
+  }
+  .photo .who{
+    padding:16px; color:#fff; width:100%;
+    background:linear-gradient(0deg, rgba(0,0,0,0.55), transparent 90%);
+  }
+  .photo .who .name{ display:block; font-family:'Fraunces',serif; font-size:22px; font-weight:600; }
+  .photo .who .meta{ display:block; font-size:13px; opacity:0.9; margin-top:2px; }
+
+  .shared-line{
+    background:var(--accent-soft); color:var(--accent-soft-ink);
+    border-radius:14px; padding:13px 15px; font-size:13.5px; line-height:1.45; margin-top:14px;
+  }
+
+  .tag{
+    display:inline-flex; align-items:center; gap:6px;
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:999px; padding:7px 12px; font-size:12.5px; color:var(--ink-muted);
+  }
+  .tag-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+
+  .prompt-card{ padding-top:2px; }
+  .prompt-card .q{ font-size:12px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.06em; }
+  .prompt-card .a{ font-family:'Fraunces', serif; font-size:17px; margin-top:4px; }
+
+  /* connections list */
+  .conn-row{
+    display:flex; align-items:center; gap:12px;
+    padding:12px; border-radius:16px; border:1px solid var(--line); background:var(--surface-2);
+  }
+  .avatar{
+    width:46px; height:46px; border-radius:50%; flex:none;
+    background:linear-gradient(160deg,#C9A98F,#7A5B45);
+  }
+  .conn-row .cn-name{ font-weight:600; font-size:14.5px; }
+  .conn-row .cn-sub{ font-size:12px; color:var(--ink-muted); }
+  .conn-row .chev{ margin-left:auto; color:var(--ink-faint); }
+
+  /* chat */
+  .bubble{ max-width:78%; padding:11px 14px; border-radius:16px; font-size:14px; line-height:1.4; }
+  .bubble.them{ background:var(--surface-2); border:1px solid var(--line); align-self:flex-start; border-bottom-left-radius:5px; }
+  .bubble.me{ background:var(--accent); color:var(--accent-ink); align-self:flex-end; border-bottom-right-radius:5px; }
+  .bubble.system{ align-self:center; background:none; color:var(--ink-faint); font-size:12px; text-align:center; }
+  .chat-thread{ display:flex; flex-direction:column; gap:10px; }
+  .chat-input{
+    display:flex; gap:8px; align-items:center;
+    border:1px solid var(--line); border-radius:999px; padding:6px 6px 6px 16px;
+    background:var(--surface-2); margin-top:14px;
+  }
+  .chat-input input{ border:none; background:none; flex:1; font-size:14px; color:var(--ink); font-family:inherit; }
+  .chat-input input::placeholder{ color:var(--ink-faint); }
+  .send-dot{ width:34px; height:34px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:flex; align-items:center; justify-content:center; flex:none; border:none; }
+
+  .center-note{
+    display:flex; flex-direction:column; align-items:center; text-align:center; gap:14px;
+    margin:auto; padding:20px 4px;
+  }
+  /* flex align-items:center shrink-wraps children to content width instead of
+     the container's width, so unconstrained paragraph text here would run
+     past the device edge instead of wrapping -- cap it explicitly. */
+  .center-note p{ max-width:280px; }
+  .center-note .card{ max-width:100%; }
+  .glyph{
+    width:64px; height:64px; border-radius:50%; background:var(--accent-soft); color:var(--accent-soft-ink);
+    display:flex; align-items:center; justify-content:center; font-size:26px; font-family:'Fraunces',serif;
+  }
+  .glyph.safety{ background:var(--safety-soft); color:var(--safety); }
+
+  textarea, input[type=text]{
+    width:100%; border:1px solid var(--line); background:var(--surface); color:var(--ink);
+    border-radius:12px; padding:12px 13px; font-size:14px; font-family:inherit; resize:none;
+  }
+  label.field{ display:flex; flex-direction:column; gap:6px; font-size:12.5px; color:var(--ink-muted); }
+
+  .footnote{ font-size:11.5px; color:var(--ink-faint); line-height:1.5; }
+
+  .menu-fab{
+    position:fixed; bottom:22px; right:22px;
+    background:var(--surface); border:1px solid var(--line); color:var(--ink);
+    border-radius:999px; padding:12px 16px; box-shadow:var(--shadow); font-size:13px; font-weight:600;
+    display:flex; align-items:center; gap:8px; z-index:40;
+  }
+  .drawer-backdrop{
+    position:fixed; inset:0; background:rgba(20,15,13,0.4); z-index:50; display:none;
+  }
+  .drawer-backdrop.open{ display:block; }
+  .drawer{
+    position:fixed; top:0; right:0; height:100%; width:300px; max-width:86vw;
+    background:var(--surface); border-left:1px solid var(--line); z-index:51;
+    transform:translateX(100%); transition:transform .2s ease;
+    padding:22px 18px; overflow-y:auto;
+  }
+  .drawer.open{ transform:translateX(0); }
+  .drawer h3{ font-size:14px; margin-bottom:14px; color:var(--ink-muted); font-family:'Work Sans',sans-serif; text-transform:uppercase; letter-spacing:0.06em; }
+  .drawer-item{
+    width:100%; text-align:left; padding:10px 10px; border-radius:10px; border:none; background:none;
+    color:var(--ink); font-size:13.5px; display:flex; gap:10px; align-items:baseline;
+  }
+  .drawer-item:hover{ background:var(--surface-2); }
+  .drawer-item .n{ font-family:'JetBrains Mono',monospace; color:var(--ink-faint); font-size:11px; width:18px; flex:none; }
+  .drawer-item.active{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .drawer-close{ background:none; border:none; color:var(--ink-muted); font-size:14px; margin-bottom:6px; }
+
+  .screen{ display:none; flex-direction:column; height:100%; }
+  .screen.active{ display:flex; }
+
+  @media (max-width:520px){
+    .top{ padding:12px 14px 4px; }
+    .stage{ padding:6px 0 40px; align-items:flex-start; }
+    .device{
+      width:100vw; height:100vh; max-height:none; border-radius:0; border:none; box-shadow:none;
+    }
+    .notch{ display:none; }
+    .screen-header{ padding-top:20px; }
+    body{ min-height:100dvh; }
+  }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<div class="top">
+  <div class="brand">
+    <span class="word">Focus</span>
+    <span class="sub">clickable prototype &#183; no backend</span>
+  </div>
+  <div class="top-actions">
+    <span class="progress-caption"><span class="mono" id="screen-index">01</span> / 20 &#183; <span id="screen-name-caption">Landing</span></span>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="device-wrap">
+    <div class="device" id="device">
+      <div class="notch"></div>
+
+      <!-- 1. LANDING -->
+      <section class="screen active" data-screen="landing" data-title="Landing">
+        <div class="screen-body" style="padding-top:56px; justify-content:space-between;">
+          <div>
+            <div class="eyebrow">Intentional dating</div>
+            <h1 style="font-size:34px; line-height:1.08;">One person<br>at a time,<br>on purpose.</h1>
+            <p class="lede" style="margin-top:18px; max-width:280px;">Choose how many people you can genuinely get to know at once. See a few, not a feed. Stop appearing to anyone new the moment you don't have room.</p>
+          </div>
+          <div class="stack">
+            <button class="btn btn-primary" data-next="onboarding">Get started</button>
+            <button class="btn btn-ghost" data-next="onboarding">I already have an account</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. ONBOARDING -->
+      <section class="screen" data-screen="onboarding" data-title="Onboarding">
+        <div class="screen-header"><button class="back-btn" data-next="landing">&#8249;</button><span class="screen-title">Your profile</span></div>
+        <div class="screen-body">
+          <div class="eyebrow">Step 3 of 9</div>
+          <h2 style="font-size:22px;">The basics</h2>
+          <p class="lede">Two to six photos, a face in the first. Three short prompts instead of a bio.</p>
+          <div class="stack" style="margin-top:20px;">
+            <label class="field">First name<input type="text" value="Ezekiel"></label>
+            <label class="field">City<input type="text" value="Washington, DC"></label>
+            <label class="field">A weekend well spent looks like&#8230;<textarea rows="2">Cooking something new, a long walk, and one good conversation.</textarea></label>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" data-next="capacity">Continue</button>
+        </div>
+      </section>
+
+      <!-- 3. CHOOSE CAPACITY -->
+      <section class="screen" data-screen="capacity" data-title="Choose capacity">
+        <div class="screen-header"><button class="back-btn" data-next="onboarding">&#8249;</button><span class="screen-title">Capacity</span></div>
+        <div class="screen-body">
+          <h2 style="font-size:22px;">How many people can you genuinely get to know at once?</h2>
+          <p class="lede">This is a ceiling, not a target. Having room does not mean you have to use it &#8212; you can change this any time.</p>
+          <div class="stack" style="margin-top:20px;">
+            <button class="option" data-cap="1">
+              <span class="radio"></span>
+              <span><span class="opt-title">1 &#8212; Deep focus</span><br><span class="opt-sub">All your attention on one connection at a time.</span></span>
+            </button>
+            <button class="option selected" data-cap="2">
+              <span class="radio"></span>
+              <span><span class="opt-title">2 &#8212; Balanced</span><br><span class="opt-sub">Room to get to know two people before narrowing.</span></span>
+            </button>
+            <button class="option" data-cap="3">
+              <span class="radio"></span>
+              <span><span class="opt-title">3 &#8212; Open exploration</span><br><span class="opt-sub">The most room Focus allows. Still never a quota.</span></span>
+            </button>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" data-next="mustHaves">Continue</button>
+        </div>
+      </section>
+
+      <!-- 4. MUST-HAVES -->
+      <section class="screen" data-screen="mustHaves" data-title="Must-haves">
+        <div class="screen-header"><button class="back-btn" data-next="capacity">&#8249;</button><span class="screen-title">Non-negotiables</span></div>
+        <div class="screen-body">
+          <h2 style="font-size:22px;">What matters most</h2>
+          <p class="lede">Free, set now, checked before anyone appears in your feed. Turn "must-match" on only for what you truly won't compromise on.</p>
+          <div class="stack" style="margin-top:18px;">
+            <div class="card">
+              <div class="toggle-row" style="padding-top:0;">
+                <div class="toggle-copy"><div class="t-title">Kids</div><div class="t-sub">Open either way</div></div>
+              </div>
+              <div class="toggle-row" style="border-top:1px solid var(--line); padding-bottom:0;">
+                <div class="toggle-copy"><div class="t-title">Must-match</div></div>
+                <button class="switch" data-toggle></button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="toggle-row" style="padding-top:0;">
+                <div class="toggle-copy"><div class="t-title">Faith</div><div class="t-sub">Christian, practicing</div></div>
+              </div>
+              <div class="toggle-row" style="border-top:1px solid var(--line); padding-bottom:0;">
+                <div class="toggle-copy"><div class="t-title">Must-match</div></div>
+                <button class="switch on" data-toggle></button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="toggle-row" style="padding-top:0;">
+                <div class="toggle-copy"><div class="t-title">Wants children</div><div class="t-sub">Yes, eventually</div></div>
+              </div>
+              <div class="toggle-row" style="border-top:1px solid var(--line); padding-bottom:0;">
+                <div class="toggle-copy"><div class="t-title">Must-match</div></div>
+                <button class="switch on" data-toggle></button>
+              </div>
+            </div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" data-next="introduction">Finish setup</button>
+        </div>
+      </section>
+
+      <!-- 5. TODAY'S INTRODUCTION -->
+      <section class="screen" data-screen="introduction" data-title="Today's introduction">
+        <div class="screen-header"><span class="screen-title">Today's introduction</span></div>
+        <div class="screen-body">
+          <button class="photo" style="border:none; padding:0; cursor:pointer;" data-next="fullProfile">
+            <span class="pick-badge">Focus Pick</span>
+            <span class="who"><span class="name">Jessica, 29</span><span class="meta">9 miles away &#183; Verified</span></span>
+          </button>
+          <div class="shared-line">You're both looking for marriage. Both want children. 9 miles apart.</div>
+          <div class="spacer"></div>
+          <div class="btn-row">
+            <button class="btn btn-secondary" data-action="pass">Not for me</button>
+            <button class="btn btn-primary" data-action="interested">Interested</button>
+          </div>
+          <p class="footnote" style="text-align:center; margin-top:10px;">1 of up to 5 today &#183; no going back once decided</p>
+        </div>
+      </section>
+
+      <!-- 6. FULL PROFILE -->
+      <section class="screen" data-screen="fullProfile" data-title="Full profile">
+        <div class="screen-header"><button class="back-btn" data-next="introduction">&#8249;</button><span class="screen-title">Jessica</span></div>
+        <div class="screen-body">
+          <div class="photo"><span class="pick-badge">Focus Pick</span><span class="who"><span class="name">Jessica, 29</span><span class="meta">9 miles away &#183; Verified</span></span></div>
+          <div class="tag-row">
+            <span class="tag">Marriage</span>
+            <span class="tag">Wants children</span>
+            <span class="tag">Christian &#183; practicing</span>
+            <span class="tag">Never smokes</span>
+          </div>
+          <div class="stack" style="margin-top:16px;">
+            <div class="prompt-card"><div class="q">Right now, I'm looking for&#8230;</div><div class="a">Someone to build a quiet, steady life with.</div></div>
+            <div class="prompt-card"><div class="q">People who know me would say I'm&#8230;</div><div class="a">The one who remembers everyone's order.</div></div>
+          </div>
+          <div class="spacer"></div>
+          <div class="btn-row">
+            <button class="btn btn-secondary" data-action="pass">Not for me</button>
+            <button class="btn btn-primary" data-action="interested">Interested</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. INTERESTED SENT -->
+      <section class="screen" data-screen="interestedSent" data-title="Interested / Not for me">
+        <div class="screen-body">
+          <div class="center-note">
+            <div class="glyph">&#9829;</div>
+            <h2 style="font-size:20px;">You're interested.</h2>
+            <p class="lede">Jessica won't know unless she's interested too. No one ever sees a count, and there's no "who liked you" screen.</p>
+          </div>
+          <button class="btn btn-primary" data-next="connectionFormed">Continue (simulate: it's mutual)</button>
+        </div>
+      </section>
+
+      <!-- 8. CONNECTION FORMED -->
+      <section class="screen" data-screen="connectionFormed" data-title="Connection formed">
+        <div class="screen-body">
+          <div class="center-note">
+            <div class="glyph">&#10003;</div>
+            <h2 style="font-size:22px;">It's mutual.</h2>
+            <p class="lede">You and Jessica are connected. That fills your last open slot.</p>
+            <div class="card" style="width:100%; margin-top:6px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="cap-readout" id="cap-readout-8">3 / 3</span>
+                <span class="footnote">capacity reached</span>
+              </div>
+              <div class="slots" style="margin-top:8px;" id="slots-8"></div>
+            </div>
+            <p class="footnote">Your pending interest in Tolu and Rachel just expired, along with every unseen incoming like. Becoming available again later means starting from nothing &#8212; no old admirers waiting.</p>
+          </div>
+          <button class="btn btn-primary" data-next="connectionsHome">See your connections</button>
+        </div>
+      </section>
+
+      <!-- 9. CONNECTIONS HOME -->
+      <section class="screen" data-screen="connectionsHome" data-title="Connections home">
+        <div class="screen-header"><span class="screen-title">Your connections</span></div>
+        <div class="screen-body">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="cap-readout" id="cap-readout-9">3 / 3</span>
+            <span class="footnote">capacity, not a leaderboard</span>
+          </div>
+          <div class="slots" id="slots-9" style="margin-top:8px; margin-bottom:18px;"></div>
+          <div class="stack" id="conn-list"></div>
+          <div class="spacer"></div>
+          <p class="footnote" style="text-align:center;">Discovery is hidden while you're Focused.</p>
+        </div>
+      </section>
+
+      <!-- 10. FOCUSED STATE -->
+      <section class="screen" data-screen="focusedState" data-title="Focused state">
+        <div class="screen-body">
+          <div class="center-note">
+            <div class="glyph">&#9680;</div>
+            <h2 style="font-size:22px;">You're Focused.</h2>
+            <p class="lede">No blur, no upsell, no queue count. Your home is your connection or connections &#8212; not a waiting room.</p>
+            <div class="card" style="width:100%; text-align:left;">
+              <p style="font-size:13.5px;"><strong>Hidden right now:</strong> discovery, your profile from new people, and your ability to receive a new like.</p>
+            </div>
+          </div>
+          <button class="btn btn-secondary" data-next="connectionsHome">Back to connections</button>
+        </div>
+      </section>
+
+      <!-- 11. ONE SLOT OPENS -->
+      <section class="screen" data-screen="slotOpens" data-title="One slot opens">
+        <div class="screen-body">
+          <div class="center-note">
+            <div class="glyph">&#9675;</div>
+            <h2 style="font-size:22px;">You have space for another connection.</h2>
+            <p class="lede">Ending a connection never reopens discovery on its own. You decide when, if ever, to look again.</p>
+            <div class="card" style="width:100%;">
+              <span class="cap-readout" id="cap-readout-11">2 / 3</span>
+              <div class="slots" id="slots-11" style="margin-top:8px;"></div>
+            </div>
+          </div>
+          <div class="stack">
+            <button class="btn btn-primary" data-next="introduction">Explore introductions</button>
+            <button class="btn btn-ghost" data-next="connectionsHome">Not right now</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 12. FOCUS NOW -->
+      <section class="screen" data-screen="focusNow" data-title="Focus Now">
+        <div class="screen-header"><button class="back-btn" data-next="connectionsHome">&#8249;</button><span class="screen-title">Focus Now</span></div>
+        <div class="screen-body">
+          <h2 style="font-size:20px;">Not the same as capacity.</h2>
+          <p class="lede">Capacity is how many people you could reasonably get to know. Focus Now is whether you actually want another one right now.</p>
+          <div class="card" style="margin-top:18px;">
+            <div class="toggle-row" style="padding-top:0;">
+              <div class="toggle-copy"><div class="t-title">Capacity</div><div class="t-sub">The most people you'd ever hold at once</div></div>
+              <span class="cap-readout">3</span>
+            </div>
+            <div class="toggle-row" style="border-top:1px solid var(--line);">
+              <div class="toggle-copy"><div class="t-title">Focus Now</div><div class="t-sub">Close your remaining slot on your own terms, without changing capacity</div></div>
+              <button class="switch" id="focusNowSwitch" data-toggle></button>
+            </div>
+          </div>
+          <p class="footnote" style="margin-top:14px;" id="focusNowCopy">Off &#8212; you're open to one more connection whenever discovery finds someone.</p>
+          <div class="spacer"></div>
+          <button class="btn btn-secondary" data-next="connectionsHome">Done</button>
+        </div>
+      </section>
+
+      <!-- 13. CHAT -->
+      <section class="screen" data-screen="chat" data-title="Chat">
+        <div class="screen-header bordered"><button class="back-btn" data-next="connectionsHome">&#8249;</button><span class="screen-title">Jessica</span></div>
+        <div class="screen-body">
+          <div class="chat-thread">
+            <div class="bubble system">You're connected. Say hello.</div>
+            <div class="bubble them">Hi! I saw we're both aiming for the same thing &#8212; glad it matched us.</div>
+            <div class="bubble me">Same here. What's a weekend well spent look like for you these days?</div>
+            <div class="bubble them">Honestly, a slow morning and one good meal I actually cooked.</div>
+          </div>
+          <div class="spacer"></div>
+          <div class="chat-input">
+            <input type="text" placeholder="Message Jessica">
+            <button class="send-dot">&#8593;</button>
+          </div>
+          <div class="btn-row" style="margin-top:14px;">
+            <button class="btn btn-secondary" data-next="shareContact" style="font-size:13px;">Share contact</button>
+            <button class="btn btn-secondary" data-next="datePlan" style="font-size:13px;">Plan a date</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 14. SHARE CONTACT -->
+      <section class="screen" data-screen="shareContact" data-title="Share contact">
+        <div class="screen-header"><button class="back-btn" data-next="chat">&#8249;</button><span class="screen-title">Share contact</span></div>
+        <div class="screen-body">
+          <h2 style="font-size:20px;">Share one way to reach you.</h2>
+          <p class="lede">One-sided. If you share, Jessica isn't shown your other details, and she makes her own separate choice.</p>
+          <div class="stack" style="margin-top:16px;">
+            <label class="option" data-radiogroup="share"><span class="radio"></span><span class="opt-title">Phone</span></label>
+            <label class="option selected" data-radiogroup="share"><span class="radio"></span><span class="opt-title">WhatsApp</span></label>
+            <label class="option" data-radiogroup="share"><span class="radio"></span><span class="opt-title">Signal</span></label>
+            <label class="option" data-radiogroup="share"><span class="radio"></span><span class="opt-title">Email</span></label>
+            <label class="option" data-radiogroup="share"><span class="radio"></span><span class="opt-title">Instagram</span></label>
+          </div>
+          <input type="text" value="+1 (202) 555&#8209;0148" style="margin-top:14px;">
+          <div class="spacer"></div>
+          <p class="footnote">This will be shared with Jessica. If you later end or block this connection, Focus cannot remove information she's already saved outside the app.</p>
+          <button class="btn btn-primary" style="margin-top:12px;" data-next="chat">Share WhatsApp</button>
+        </div>
+      </section>
+
+      <!-- 15. PLAN / SHARE DATE -->
+      <section class="screen" data-screen="datePlan" data-title="Plan a date">
+        <div class="screen-header"><button class="back-btn" data-next="chat">&#8249;</button><span class="screen-title">Plan a date</span></div>
+        <div class="screen-body">
+          <div class="stack">
+            <label class="field">Where<input type="text" value="Lupo Verde, 14th St"></label>
+            <label class="field">When<input type="text" value="Friday &#183; 7:00 PM"></label>
+            <label class="field">Expected finish<input type="text" value="9:30 PM"></label>
+          </div>
+          <div class="card" style="margin-top:18px;">
+            <p style="font-size:13.5px;">Focus never stores your contact's number or holds your location. It only remembers the plan long enough to ask "everything okay?" near your expected finish.</p>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary">Share with a trusted contact &#8599;</button>
+          <p class="footnote" style="text-align:center; margin-top:8px;">Opens your phone's own share sheet &#8212; texted the same way you'd tell a friend.</p>
+        </div>
+      </section>
+
+      <!-- 16. POST-DATE CHECK-IN -->
+      <section class="screen" data-screen="checkin" data-title="Post-date check-in">
+        <div class="screen-header"><span class="screen-title">Private check-in</span></div>
+        <div class="screen-body">
+          <h2 style="font-size:20px;">How did it go with Jessica?</h2>
+          <p class="lede">Only you see this. She's never told which answer you chose.</p>
+          <div class="stack" style="margin-top:16px;">
+            <button class="option" data-next="chat"><span class="radio"></span><span class="opt-title">I'd see them again</span></button>
+            <button class="option" data-next="chat"><span class="radio"></span><span class="opt-title">I'm unsure</span></button>
+            <button class="option" data-next="endConnection"><span class="radio"></span><span class="opt-title">Not for me</span></button>
+            <button class="option" data-next="blockReport" style="border-color:var(--safety-soft);"><span class="radio" style="border-color:var(--safety);"></span><span class="opt-title" style="color:var(--safety);">Something made me uncomfortable</span></button>
+            <button class="option" data-next="blockReport" style="border-color:var(--safety-soft);"><span class="radio" style="border-color:var(--safety);"></span><span class="opt-title" style="color:var(--safety);">I felt unsafe</span></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 17. END CONNECTION -->
+      <section class="screen" data-screen="endConnection" data-title="End connection">
+        <div class="screen-header"><button class="back-btn" data-next="connectionsHome">&#8249;</button><span class="screen-title">End with Jessica</span></div>
+        <div class="screen-body">
+          <h2 style="font-size:20px;">Would you like to leave a short closing note?</h2>
+          <p class="lede">Optional. If you leave nothing, Jessica just sees "This connection has ended."</p>
+          <div class="stack" style="margin-top:16px;">
+            <label class="option" data-radiogroup="end"><span class="radio"></span><span class="opt-title">Not a romantic fit</span></label>
+            <label class="option" data-radiogroup="end"><span class="radio"></span><span class="opt-title">Our goals don't align</span></label>
+            <label class="option selected" data-radiogroup="end"><span class="radio"></span><span class="opt-title">No chemistry after meeting</span></label>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-danger" style="border:1px solid var(--safety-soft);" data-next="slotOpens">End connection</button>
+          <button class="btn btn-ghost" data-next="chat">Never mind</button>
+        </div>
+      </section>
+
+      <!-- 18. BLOCK / REPORT -->
+      <section class="screen" data-screen="blockReport" data-title="Block / report">
+        <div class="screen-header"><button class="back-btn" data-next="chat">&#8249;</button><span class="screen-title">Block &amp; report</span></div>
+        <div class="screen-body">
+          <div class="card" style="border-color:var(--safety-soft);">
+            <div class="toggle-row" style="padding-top:0;">
+              <div class="toggle-copy"><div class="t-title">Block Jessica</div><div class="t-sub">No note, no explanation. Mutually invisible, permanently.</div></div>
+              <button class="switch on" data-toggle></button>
+            </div>
+          </div>
+          <h2 style="font-size:18px; margin-top:20px;">What happened?</h2>
+          <div class="stack" style="margin-top:12px;">
+            <label class="option" data-radiogroup="report"><span class="radio"></span><span class="opt-title">Made me uncomfortable</span></label>
+            <label class="option selected" data-radiogroup="report"><span class="radio"></span><span class="opt-title">Felt unsafe</span></label>
+            <label class="option" data-radiogroup="report"><span class="radio"></span><span class="opt-title">Something else</span></label>
+          </div>
+          <div class="card" style="margin-top:16px; background:var(--safety-soft); border-color:transparent;">
+            <p style="font-size:13px; color:var(--safety);">A human reviews every report. Focus doesn't act as a court &#8212; this only confirms someone will look at it. If you're in immediate danger, contact local emergency services first.</p>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-danger" style="border:1px solid var(--safety-soft);" data-next="connectionsHome">Submit &amp; block</button>
+        </div>
+      </section>
+
+      <!-- 19. POOL EXHAUSTED -->
+      <section class="screen" data-screen="poolExhausted" data-title="Pool exhausted">
+        <div class="screen-body">
+          <div class="center-note">
+            <div class="glyph">&#183;</div>
+            <h2 style="font-size:22px;">You're caught up.</h2>
+            <p class="lede">You've seen everyone currently available who meets your must-haves. New people will appear as they join or become available.</p>
+          </div>
+          <div class="stack">
+            <button class="btn btn-secondary" data-next="poolExhausted">Wait &#8212; tell me when someone new fits</button>
+            <button class="btn btn-secondary" data-next="poolExhausted">Explore a little farther (distance only)</button>
+            <button class="btn btn-secondary" data-next="mustHaves">Review my soft preferences</button>
+          </div>
+          <p class="footnote" style="text-align:center; margin-top:10px;">A must-have is only ever loosened by you, on purpose, here.</p>
+        </div>
+      </section>
+
+      <!-- 20. SETTINGS -->
+      <section class="screen" data-screen="settings" data-title="Settings">
+        <div class="screen-header"><button class="back-btn" data-next="connectionsHome">&#8249;</button><span class="screen-title">Settings</span></div>
+        <div class="screen-body">
+          <div class="card">
+            <div class="toggle-row" style="padding-top:0;">
+              <div class="toggle-copy"><div class="t-title">Capacity</div><div class="t-sub">Ceiling, never a quota</div></div>
+              <span class="cap-readout" id="cap-readout-settings">3</span>
+            </div>
+            <div class="toggle-row" style="border-top:1px solid var(--line);">
+              <div class="toggle-copy"><div class="t-title">Focus Now</div><div class="t-sub">Pause discovery without touching capacity</div></div>
+              <button class="switch" data-next="focusNow">Edit &#8250;</button>
+            </div>
+          </div>
+          <div class="card" style="margin-top:14px;">
+            <div class="toggle-row" style="padding-top:0;">
+              <div class="toggle-copy"><div class="t-title">Show heritage on profile</div></div>
+              <button class="switch on" data-toggle></button>
+            </div>
+            <div class="toggle-row" style="border-top:1px solid var(--line);">
+              <div class="toggle-copy"><div class="t-title">Use heritage in who I'm shown</div><div class="t-sub">Off by default. The system never infers this on its own.</div></div>
+              <button class="switch" data-toggle></button>
+            </div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-ghost" data-next="landing">Pause my account</button>
+          <button class="btn btn-ghost" style="color:var(--safety);" data-next="landing">Delete my account</button>
+        </div>
+      </section>
+
+    </div>
+
+    <div class="btn-row" style="width:390px; max-width:100%;">
+      <button class="chip-btn" id="prevBtn" style="flex:1; justify-content:center;">&#8249; Back</button>
+      <button class="chip-btn" id="resetBtn" style="flex:1; justify-content:center;">Restart story &#8634;</button>
+    </div>
+  </div>
+</div>
+
+<button class="menu-fab" id="menuFab">&#9776; Screens</button>
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<div class="drawer" id="drawer">
+  <button class="drawer-close" id="drawerClose">Close &#10005;</button>
+  <h3>Jump to any of the 20</h3>
+  <div id="drawerList"></div>
+</div>
+
+<script>
+(function(){
+  var ORDER = [
+    ["landing","Landing"],
+    ["onboarding","Onboarding"],
+    ["capacity","Choose capacity"],
+    ["mustHaves","Must-haves"],
+    ["introduction","Today's introduction"],
+    ["fullProfile","Full profile"],
+    ["interestedSent","Interested / Not for me"],
+    ["connectionFormed","Connection formed"],
+    ["connectionsHome","Connections home"],
+    ["focusedState","Focused state"],
+    ["slotOpens","One slot opens"],
+    ["focusNow","Focus Now"],
+    ["chat","Chat"],
+    ["shareContact","Share contact"],
+    ["datePlan","Plan / share date"],
+    ["checkin","Post-date check-in"],
+    ["endConnection","End connection"],
+    ["blockReport","Block / report"],
+    ["poolExhausted","Pool exhausted"],
+    ["settings","Settings"]
+  ];
+  var indexOf = {};
+  ORDER.forEach(function(pair, i){ indexOf[pair[0]] = i; });
+
+  var state = {
+    capacity: 2,
+    connections: [
+      {name:"Sarah", note:"Talking every day"},
+      {name:"Amara", note:"Planning a first date"}
+    ],
+    focusNow: false,
+    history: ["landing"]
+  };
+
+  function renderSlots(el, filled, total){
+    if(!el) return;
+    el.innerHTML = "";
+    for(var i=0;i<total;i++){
+      var d = document.createElement("div");
+      d.className = "slot" + (i < filled ? " filled" : "");
+      el.appendChild(d);
+    }
+  }
+
+  function renderConnList(){
+    var wrap = document.getElementById("conn-list");
+    if(!wrap) return;
+    wrap.innerHTML = "";
+    state.connections.forEach(function(c){
+      var row = document.createElement("button");
+      row.className = "conn-row";
+      row.style.width = "100%"; row.style.border = "1px solid var(--line)";
+      row.setAttribute("data-next","chat");
+      row.innerHTML = '<span class="avatar"></span><span><span class="cn-name">'+c.name+'</span><br><span class="cn-sub">'+c.note+'</span></span><span class="chev">&#8250;</span>';
+      wrap.appendChild(row);
+    });
+  }
+
+  function refreshCapacityUI(){
+    var filled = state.connections.length;
+    var total = state.capacity;
+    renderSlots(document.getElementById("slots-8"), filled, total);
+    renderSlots(document.getElementById("slots-9"), filled, total);
+    renderSlots(document.getElementById("slots-11"), filled, total);
+    var r8 = document.getElementById("cap-readout-8"); if(r8) r8.textContent = filled+" / "+total;
+    var r9 = document.getElementById("cap-readout-9"); if(r9) r9.textContent = filled+" / "+total;
+    var r11 = document.getElementById("cap-readout-11"); if(r11) r11.textContent = filled+" / "+total;
+    var rs = document.getElementById("cap-readout-settings"); if(rs) rs.textContent = total;
+    renderConnList();
+  }
+
+  function showScreen(id, opts){
+    opts = opts || {};
+    document.querySelectorAll(".screen").forEach(function(s){ s.classList.remove("active"); });
+    var target = document.querySelector('.screen[data-screen="'+id+'"]');
+    if(!target) return;
+    target.classList.add("active");
+    if(!opts.skipHistory) state.history.push(id);
+    var i = indexOf[id];
+    document.getElementById("screen-index").textContent = String(i+1).padStart(2,"0");
+    document.getElementById("screen-name-caption").textContent = ORDER[i][1];
+    document.querySelectorAll(".drawer-item").forEach(function(btn){
+      btn.classList.toggle("active", btn.getAttribute("data-goto") === id);
+    });
+    refreshCapacityUI();
+    var body = target.querySelector(".screen-body");
+    if(body) body.scrollTop = 0;
+  }
+
+  // wire declarative [data-next] and [data-action]
+  document.addEventListener("click", function(e){
+    var nextEl = e.target.closest("[data-next]");
+    if(nextEl){
+      showScreen(nextEl.getAttribute("data-next"));
+      return;
+    }
+    var actionEl = e.target.closest("[data-action]");
+    if(actionEl){
+      var action = actionEl.getAttribute("data-action");
+      if(action === "pass"){ showScreen("introduction"); }
+      if(action === "interested"){ showScreen("interestedSent"); }
+      return;
+    }
+    var capEl = e.target.closest("[data-cap]");
+    if(capEl){
+      document.querySelectorAll(".option[data-cap]").forEach(function(o){ o.classList.remove("selected"); });
+      capEl.classList.add("selected");
+      state.capacity = parseInt(capEl.getAttribute("data-cap"),10);
+      refreshCapacityUI();
+      return;
+    }
+    var toggleEl = e.target.closest("[data-toggle]");
+    if(toggleEl){
+      toggleEl.classList.toggle("on");
+      if(toggleEl.id === "focusNowSwitch"){
+        var on = toggleEl.classList.contains("on");
+        document.getElementById("focusNowCopy").textContent = on
+          ? "On &#8212; your remaining slot is closed on your own terms. Discovery stays hidden until you turn this off."
+          : "Off &#8212; you're open to one more connection whenever discovery finds someone.";
+      }
+      return;
+    }
+    var radioEl = e.target.closest("[data-radiogroup]");
+    if(radioEl){
+      var group = radioEl.getAttribute("data-radiogroup");
+      document.querySelectorAll('[data-radiogroup="'+group+'"]').forEach(function(o){ o.classList.remove("selected"); });
+      radioEl.classList.add("selected");
+      return;
+    }
+  });
+
+  // "connection formed" removes one demo slot's worth of headroom by adding Jessica
+  var origShow = showScreen;
+  showScreen = function(id, opts){
+    if(id === "connectionFormed" && !state.connections.some(function(c){return c.name==="Jessica";})){
+      state.capacity = 3;
+      state.connections.push({name:"Jessica", note:"Just connected"});
+    }
+    if(id === "slotOpens"){
+      state.connections = state.connections.filter(function(c){ return c.name !== "Jessica" && c.name !== "Amara"; });
+    }
+    origShow(id, opts);
+  };
+
+  document.getElementById("prevBtn").addEventListener("click", function(){
+    if(state.history.length > 1){
+      state.history.pop();
+      var prev = state.history[state.history.length-1];
+      showScreen(prev, {skipHistory:true});
+    }
+  });
+  document.getElementById("resetBtn").addEventListener("click", function(){
+    state.capacity = 2;
+    state.connections = [{name:"Sarah", note:"Talking every day"},{name:"Amara", note:"Planning a first date"}];
+    state.history = ["landing"];
+    showScreen("landing", {skipHistory:true});
+  });
+
+  var drawerList = document.getElementById("drawerList");
+  ORDER.forEach(function(pair, i){
+    var b = document.createElement("button");
+    b.className = "drawer-item";
+    b.setAttribute("data-goto", pair[0]);
+    b.innerHTML = '<span class="n">'+String(i+1).padStart(2,"0")+'</span><span>'+pair[1]+'</span>';
+    b.addEventListener("click", function(){
+      showScreen(pair[0]);
+      closeDrawer();
+    });
+    drawerList.appendChild(b);
+  });
+
+  function openDrawer(){ document.getElementById("drawer").classList.add("open"); document.getElementById("drawerBackdrop").classList.add("open"); }
+  function closeDrawer(){ document.getElementById("drawer").classList.remove("open"); document.getElementById("drawerBackdrop").classList.remove("open"); }
+  document.getElementById("menuFab").addEventListener("click", openDrawer);
+  document.getElementById("drawerClose").addEventListener("click", closeDrawer);
+  document.getElementById("drawerBackdrop").addEventListener("click", closeDrawer);
+
+  refreshCapacityUI();
+})();
+</script>
