@@ -28,7 +28,19 @@ Eight further findings, all incorporated, plus one product decision:
 
 **Product decision: pending likes are now cleared, not just paused, the moment a user's last open slot fills.** The first review's fix (available/focused) stopped new likes from reaching a focused person. It left pre-existing likes waiting, which meant a person who formed a connection while several others had already liked them would, weeks later, resurface those old admirers one by one when the connection ended. That is a smaller version of the same problem: not a growing backlog, but a preserved one. This revision clears every other pending like, both directions, the instant a user transitions from available to focused, so that becoming available again is a genuine clean slate rather than a queue with a pause button. This is deliberately more expensive to the product's own match count, which is the point: it trades network efficiency for the "dating without backup options" premise the whole concept rests on. **Because this changes the exact capacity mechanism, it is explicitly added to the Phase −1 legal scope alongside the available/focused design itself**, not treated as a safe follow-on change.
 
-Everything else from both drafts was confirmed sound and is carried forward unchanged: the database-as-referee principle, likes being unselectable by users, deterministic-lock concurrency handling, the negative-authorization test list, and Realtime over Postgres Changes for chat.
+### 0.3 Safety and exit design (2026-09-09)
+
+A third input, verified against Hinge, Tinder, Bumble, and RAINN's current documentation, surfaced a gap the first two reviews didn't touch: the architecture had never worked out what happens when a connection goes wrong, silently, badly, or dangerously, and `paused` had existed as an enum value since the first draft without ever being given behavior. The fix adds a new stated principle and a fuller model for leaving:
+
+1. **New principle: focus limits options, it must never limit exits.** Added to section 1 alongside "the database is the referee." Ending a connection, blocking, and reporting are always available immediately, with no waiting period and no requirement to explain.
+2. **Ending a connection now has three distinct paths with different guarantees**, not one: a normal End (note now optional, not required, since forcing an explanation can manufacture confrontation rather than prevent it), Block (unchanged from the prior draft: no note, no explanation, permanent, mutual invisibility), and Report (now severity-tiered). See the new section 2.4.
+3. **Reports now carry a severity**, derived from the reason and overridable by an admin, confirmed against how Hinge, Tinder, and Bumble actually triage safety reports versus ordinary complaints. A `high` or `critical` report automatically and immediately restricts the reported person's account, pausing their ability to send new messages anywhere on the platform, pending human review, rather than waiting in the same queue as a report about a bad first impression.
+4. **Reporting a genuine safety incident is no longer bound by the same 30-day visibility window as an ordinary report**, matching Hinge's ability to report a past match about an offline incident. This is stated honestly alongside its real limit: if the connection's messages were already purged before the report was filed, that evidence cannot be recovered.
+5. **`paused` is now a defined, self-service state**, distinct from being banned or deleting the account: it removes a person from all future matching immediately, using the same status check that already gates matching, but does not forcibly end an existing connection. The other person in that connection is told plainly and given an immediate, one-tap way to end it themselves, rather than being left to wonder or to wait out the normal inactivity timer.
+6. **Automatic inactivity handling is shortened** from a 14-day nudge and a 3-day grace period (17 days total) to a 3-day nudge, a 7-day explicit prompt with a one-tap end option, and a 10-day automatic close, since the original window was not a floor on when someone could leave (manual ending was always available) but its length worked against the product's own premise of a single, present connection.
+7. **A private post-meeting check-in and an optional, deliberately minimal date-safety feature are added**, scoped narrowly per the recommendation not to build anything resembling an emergency-dispatch system: Focus generates a plan a person shares through their own phone's share sheet, exactly as Bumble's Share Date does, rather than Focus storing or sending a third party's contact information itself. See sections 2.5 and 2.6.
+
+Everything else from all three inputs was confirmed sound and is carried forward unchanged: the database-as-referee principle, likes being unselectable by users, deterministic-lock concurrency handling, the negative-authorization test list, and Realtime over Postgres Changes for chat.
 
 ---
 
@@ -45,7 +57,8 @@ A dating web app where each person chooses how many people they can genuinely ge
 3. **Heritage on the user's terms.** Self-written background, community or tribe, origin, language, and raised-in fields. Heritage affects matching only when the user switches it on in settings, and then each rule carries an importance the user chose: nice to have, important, or must. The system never infers, ranks, or optimises on heritage by itself.
 4. **Nothing to collect.** No validation loop: no like counter, no "who liked you," no posting, no social handles, no visible reputation score of any kind, and no backlog of old admirers waiting behind a closed door.
 5. **Safety and privacy as design constraints.** Every rule above is enforced in the database, not the browser. Sensitive attributes (faith, ethnicity, genotype, who you want to meet, location) are minimised, access-controlled through functions rather than raw table access, and deletable. Every function that is not meant to be called directly by a client lives where a client cannot reach it, not merely where it is labeled as such.
-6. **Accountability, held internally.** Connections end with a note. How people end connections is tracked to catch abuse and repeat ghosting; it is not displayed as a score, because a displayed score creates pressure to keep talking to someone rather than end things honestly.
+6. **Accountability, held internally.** Connections can end with an optional closing note. How people end connections is tracked to catch abuse and repeat ghosting; it is not displayed as a score, because a displayed score creates pressure to keep talking to someone rather than end things honestly.
+7. **Focus limits options. It must never limit exits.** Capacity limits who you can start something new with. It must never make it harder to leave something that isn't working, isn't safe, or has simply run its course. Ending a connection, blocking, and reporting are always available immediately, with no note required, no timer to wait out, and no reputation cost. Where this document's mechanisms ever seem to conflict with that sentence, this sentence wins.
 
 ### A permanent commitment versus a v1 decision
 
@@ -105,7 +118,7 @@ focused(p)   := not available(p)
 - **Likes and forming a connection.** A like is silent. The other person never sees a count and there is no "who liked you" screen. Sending a like requires both the sender and the recipient to be available at that exact moment, re-checked immediately before the like is created or a connection forms, closing the race where a person becomes focused between being shown a card and acting on it. Likes that go unanswered expire after 30 days.
 - **When your last open slot fills, you enter Focused and every other pending like involving you, in either direction, is cleared.** Not merely paused: cleared. Anyone who had liked you and was still waiting, and anyone you had liked and were still waiting on, is let go. This is deliberate. When you become available again, you start from nothing: no old admirers resurface, no old interests linger. The cost is fewer eventual matches; the point is that focus means focus, not a queue with the lid on.
 - **When you're Focused,** discovery disappears for you too. No blur, no upsell, no queue count. Your home screen is your connection or connections. Your profile is not shown to anyone new, and nobody can send you a new like.
-- **A connection** is a private text chat plus each other's full profile. It ends when either person taps End Connection and picks or writes a short closing note, which appears to the other person as a message in the chat. Ending frees both slots immediately, and each person becomes `available` again the instant their own count drops below their own capacity. If nobody has sent a human message for 14 days, both get a "still here?" prompt (a system message, which does not count as a human message for this purpose), and after 3 more silent days with no human message from either side, the connection closes as faded.
+- **A connection** is a private text chat plus each other's full profile. It ends when either person chooses to end it, and frees both slots immediately the instant each person's own count drops below their own capacity. How a connection can end, and what happens automatically when nobody acts, is covered in full in sections 2.4 and 2.5, because it turned out to need more than one sentence: capacity limits who you can meet, and it must never make it harder to leave.
 
 **Why this design differs from a profile that stays universally visible:** an earlier draft kept a focused user's profile visible to everyone and only hid the discovery feed on the viewing side, partly as a way to keep some daylight from the Sidekick patent's specific claim language, which requires making the at-limit user invisible and declining their outgoing likes. This revision instead removes focused users from candidate generation, and now clears their pending likes outright, because those are the correct product fixes for the backlog problem regardless of the patent. Whether this mechanism sits closer to or further from the patent's claims is exactly the kind of question that belongs to counsel, not to this document. See section 14, Phase −1: the entire visibility and clearing mechanism in this section is provisional pending that review, and the review must happen before section 7's functions are implemented.
 
@@ -133,6 +146,30 @@ focused(p)   := not available(p)
 **Genotype** lives in a collapsed "health compatibility" section, off by default, with its own separate consent (see section 8.1), a plain-language note on why AS and AS matters, and a must switch. It is never suggested or gated based on a user's heritage answers; the user opens it or does not.
 
 **Verification.** Selfie with a randomly assigned pose, reviewed by a human. Optional work or school email verification comes later, not in v1.
+
+### 2.4 Ending a connection: End, Block, and Report
+
+These are three different actions with three different guarantees, confirmed against how Hinge, Tinder, and Bumble draw this same line. Conflating them, which the first two drafts of this document effectively did by routing everything through one `end_connection` function, would have meant a person fleeing harassment goes through the same "pick a reason, write a note" flow as someone who just didn't feel a spark.
+
+**End Connection.** For no chemistry, differing goals, a change of mind, or a date that was simply bad but not unsafe. Either person can end at any moment, with no waiting period. A short closing note is offered, never required: "Would you like to leave a short closing note?" with preset options (not a romantic fit, no chemistry after meeting, our goals don't align, taking a break, something else) or free text up to 300 characters, or nothing at all. If nothing is given, the other person sees a plain "This connection has ended." Both slots free immediately. This is the ordinary, expected outcome of giving one person real attention and it not working out, and the product should never make it feel like a failure.
+
+**Block.** For "I do not want this person to contact or encounter me again," whether or not anything unsafe happened. No note, no explanation, no reason given to either the blocked person or stored against them beyond the block itself. The connection ends, messages stop, both profiles become mutually invisible everywhere (feed, waiting list, search), any likes between them are gone, and the slot frees. The blocked person is shown the same generic "This connection has ended" and has no way to learn a block occurred, matching how Tinder and Bumble both keep blocking indistinguishable from an ordinary unmatch on the receiving end.
+
+**Report.** For behavior that Focus, not just the reporting user, needs to know about: rudeness, harassment, threats, stalking, assault, or anything that felt unsafe. A report can be filed alongside a block (most safety reports should be) or on its own, and does not require an active connection: a past connection, however it ended, can still be reported, and for genuine safety concerns this is not bound by how long ago it happened. Reports carry a severity, described fully in section 5.1 and 7.13, and the more serious tiers trigger an automatic, immediate restriction on the reported person's account while a human reviews it. Filing a report is never shown to the reporter as a verdict: Focus is not a court, and the interface never claims to have confirmed or denied what was reported. It only confirms that a human will look at it.
+
+### 2.5 Pausing, deleting, and being restricted
+
+Three different things can make a person stop being available, and they behave differently on purpose:
+
+- **Pausing** is voluntary and short-term: a settings toggle a person flips themselves. A paused person disappears from everyone's discovery and waiting list immediately, the same way a focused person does, and cannot be matched with. It does not end an existing active connection, because someone stepping away for a few days might still want to say so to the one person they're actually talking to. But the other person in that connection is never left to wonder or to wait: their side of the chat shows "This person has paused their account" plainly, with an immediate, one-tap End Connection action right there, not gated behind the normal inactivity timeline in section 2.4. An existing connection never traps the other person just because one side stepped back.
+- **Deleting the account** ends every active connection immediately, exactly as before, with the other person seeing a neutral "This person is no longer on Focus. Your connection has ended," never a timestamp or any detail that turns account deletion into forensic relationship analysis.
+- **Being restricted** is not something a person does to themselves: it is the automatic, immediate consequence of a high or critical severity report landing against their account (section 2.4, section 7.13), pending human review. A restricted person keeps their existing connections intact at the connection-status level, so a partner unrelated to the report isn't confused by a sudden termination, but cannot send new messages anywhere on the platform, cannot appear in anyone's discovery, and cannot form new connections until an admin clears or confirms the report. Every partner affected sees a generic "This connection is under safety review and messaging is paused for now," with the same immediate End Connection or Block available to them regardless. Restriction never confirms what was reported; it is a precaution, not a verdict, and an admin resolves it one way or the other, never leaves it standing indefinitely.
+
+### 2.6 Meeting up: a private check-in, and a deliberately small date-safety feature
+
+Focus has no way to know when two people actually meet in person, and it should not try to find out through location tracking: that would contradict the privacy stance in section 8.2. Instead, either person can mark "We met" inside their connection at any time they choose, entirely privately; the other person is never told that this was tapped. Marking it opens a short, private check-in, seen by nobody else: would you like to see them again (yes, not sure, no), and how did it feel, with a clearly separate "I felt unsafe" option that skips straight past ordinary breakup language to Block, Report, and a plain link to local emergency services and to sharing with a trusted contact. Answering "no" here is just a fast path into the ordinary End Connection flow from section 2.4; the other person never learns "they said no to another date," only that the connection ended, exactly as any other end would look to them.
+
+For the date itself, Focus offers a narrow, deliberately unambitious safety feature modeled on Bumble's Share Date rather than Tinder's Noonlight, because building a real emergency-monitoring service is a liability, an operational burden, and a promise of rescue this product has no business making. Inside an active connection, either person can fill in a plan (where, when, and an expected end time) and get back a short, shareable summary naming their match by first name and verification status, which they send themselves, through their own phone's own share sheet, to whomever they choose, exactly as they could already do by texting a friend, just formatted cleanly. Focus never sends this itself and never stores the friend's phone number or email; it only holds the plan's details briefly, for the duration of the date, so it can offer one check-in prompt near the expected end time asking simply "everything okay," with "I need help" leading to the same safety-first screen as "I felt unsafe" above. This is a nudge toward a habit RAINN already recommends, not a monitoring system, and the copy says so plainly rather than implying a promise the product cannot keep.
 
 ---
 
@@ -275,7 +312,7 @@ All client-facing tables and RPCs live in schema `public`. Every function this d
 ### 5.1 Enumerated types
 
 ```
-profile_status:   onboarding | pending_review | active | paused | banned | deleted
+profile_status:   onboarding | pending_review | active | paused | restricted | banned | deleted
 gender:           woman | man | nonbinary | self_described
 seeking:          women | men | everyone
 goal:             marriage | life_partner | serious_relationship
@@ -294,8 +331,10 @@ feed_decision:    none | like | pass
 like_status:      pending | declined | connected | expired
 connection_status: active | ended
 end_reason:       ended_by_user | faded | blocked | account_deleted | banned
-report_reason:    fake | harassment | scam | underage | off_platform_push | inappropriate_content | other
+report_reason:    disrespectful | harassment | threats_stalking | assault_or_violence | scam | fake | underage | off_platform_push | inappropriate_content | other
+report_severity:  low | medium | high | critical
 report_status:    open | reviewed | actioned | dismissed
+report_resolution: cleared | confirmed
 verification_decision: approved | rejected
 consent_kind:     terms | privacy | sensitive_data | genotype_data
 consent_action:   accepted | withdrawn
@@ -310,6 +349,7 @@ upload_kind:      photo | selfie
 |---|---|---|
 | id | uuid PK | equals `auth.users.id` |
 | status | profile_status | default `onboarding` |
+| paused_at | timestamptz | nullable; set by `pause_account()`, cleared by `unpause_account()`; see section 2.5 |
 | first_name | text | 1 to 30 chars |
 | age | smallint | maintained by trigger from `profile_private.birth_date` and nightly job |
 | gender | gender | |
@@ -452,7 +492,7 @@ Partial unique index on `(user_a, user_b) WHERE status = 'active'`. Index on `(u
 
 **messages**
 
-id bigint identity PK, connection_id FK, sender_id FK (nullable for system messages), is_system boolean default false, body text (1 to 2000 chars), created_at, deleted_at (nullable, for account-deletion anonymisation). Index `(connection_id, id)`. Trigger enforces: sender is a member for non-system messages, connection is active, rate limits, and updates `connections.last_message_at` always, `last_human_message_at`/`last_human_sender_id` only when `is_system = false`.
+id bigint identity PK, connection_id FK, sender_id FK (nullable for system messages), is_system boolean default false, body text (1 to 2000 chars), created_at, deleted_at (nullable, for account-deletion anonymisation). Index `(connection_id, id)`. Trigger enforces: sender is a member for non-system messages, connection is active, sender's `profiles.status = 'active'` (a `restricted` sender is rejected with `account_restricted`, section 2.5 and 7.13; a `paused` sender is not restricted from messaging, only from new matching, so this check only ever blocks `restricted`), rate limits, and updates `connections.last_message_at` always, `last_human_message_at`/`last_human_sender_id` only when `is_system = false`.
 
 **blocks**
 
@@ -460,11 +500,52 @@ id bigint identity PK, connection_id FK, sender_id FK (nullable for system messa
 
 **reports**
 
-id, reporter_id, reported_id, connection_id (nullable), message_id (nullable), reason, details (up to 1000), created_at, status, reviewed_by, reviewed_at, action (text). Index on `(status, created_at)`.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| reporter_id, reported_id | uuid FK | |
+| connection_id | uuid FK | nullable |
+| message_id | bigint FK | nullable |
+| reason | report_reason | |
+| severity | report_severity | default computed from `reason` by trigger (disrespectful→low, harassment→medium, threats_stalking→high, assault_or_violence→critical, scam→medium, fake→low, underage→critical, off_platform_push→low, inappropriate_content→low, other→low); admin-overridable |
+| details | text | up to 1000 |
+| created_at | timestamptz | |
+| status | report_status | |
+| resolution | report_resolution | nullable, set only when an admin resolves a report that triggered a restriction |
+| reviewed_by, reviewed_at, action | | |
+
+Index on `(status, severity, created_at)` so `high` and `critical` reports sort to the top of the review queue by construction. For `reason` in `threats_stalking` or `assault_or_violence`, `report_user()` (section 7.13) does not require the same 30-day visibility window as an ordinary report; it only requires that a connection, feed item, or like ever existed between the two, at any point in the past, matching how Hinge allows reporting a past match about something that happened offline. If the connection's messages were already purged under the normal 30-day schedule before the report was filed, they cannot be recovered; this is stated plainly rather than implied otherwise.
+
+**meeting_checkins**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| profile_id | uuid FK | the person answering; never visible to the other party |
+| connection_id | uuid FK | |
+| met_at | timestamptz | when this person tapped "We met" |
+| see_again | text | `yes` \| `not_sure` \| `no`, nullable until answered |
+| felt_unsafe | boolean | default false |
+| created_at | timestamptz | |
+
+Unique `(profile_id, connection_id)`: one check-in per person per connection, updatable. RLS: own rows only, no policy grants the connection partner access to the other's row, ever; this is deliberately more private than the connection's own message thread. A `felt_unsafe = true` value increments `user_abuse_signals.unsafe_checkin_flags_received` for the other party in the same connection, admin-only, in addition to whatever the person does next (Block, Report, or nothing).
+
+**date_plans**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| connection_id | uuid FK | |
+| created_by | uuid FK | |
+| location_text | text | up to 200 chars |
+| planned_at, expected_end_at | timestamptz | |
+| created_at | timestamptz | |
+
+No third-party contact information is ever stored here: sharing happens through the user's own device share sheet, exactly as Bumble's Share Date works, so Focus never holds a friend's phone number or email. Purged automatically 3 days after `expected_end_at` (section 7.19), since the row has no purpose once the window it describes has passed.
 
 **user_abuse_signals** (admin-only; never user-selectable, not even the owner's own row)
 
-profile_id PK, connections_ended int, connections_ended_with_note int, connections_faded_as_non_responder int, reports_received int, updated_at. Written only by functions and the inactivity job. Used exclusively to surface repeat-ghosting or abuse patterns to admins; never rendered to any user, and never contributes to matching or ordering.
+profile_id PK, connections_ended int, connections_ended_with_note int, connections_faded_as_non_responder int, reports_received int, unsafe_checkin_flags_received int, updated_at. Written only by functions and the inactivity job. Used exclusively to surface repeat-ghosting or abuse patterns to admins; never rendered to any user, and never contributes to matching or ordering.
 
 **user_daily**
 
@@ -527,11 +608,11 @@ True when any of the following holds, and the pair is not blocked in either dire
 
 1. `viewer = target`.
 2. `private.is_admin_mfa(viewer)`.
-3. An `active` connection exists between them.
-4. A `feed_items` row exists with `user_id = viewer`, `target_id = target`, `served_on = current_date`, **and `private.available(target)` is true right now**. This closes the gap where an already-generated feed row kept a now-focused person visible; the check happens every time the function runs, not only at the moment the row was inserted.
-5. A `likes` row exists with `from_user = target`, `to_user = viewer`, `status = 'pending'`, `surfaced_at IS NOT NULL`, not expired, and `private.available(target)` is true at read time.
+3. An `active` connection exists between them, **regardless of the target's own profile status**. A paused or restricted person's existing connection partner must still be able to see their profile and photos, exactly as before, so the partner can render the plain-language notice from section 2.5 and act on it; only new matching exposure (cases 4 and 5) is gated on the target being `active`. This was a real gap in the prior draft, which required `active` status uniformly and would have broken an existing chat the moment its other member paused.
+4. A `feed_items` row exists with `user_id = viewer`, `target_id = target`, `served_on = current_date`, the target's profile status is `active`, **and `private.available(target)` is true right now**. This closes the gap where an already-generated feed row kept a now-focused person visible; the check happens every time the function runs, not only at the moment the row was inserted.
+5. A `likes` row exists with `from_user = target`, `to_user = viewer`, `status = 'pending'`, `surfaced_at IS NOT NULL`, not expired, the target's profile status is `active`, and `private.available(target)` is true at read time.
 
-For cases 3 to 5 the target must have status `active`. Ended connections do not grant visibility after 30 days (messages are purged by then; profile viewing ends immediately at `ended_at`). The function is `STABLE`, `SECURITY DEFINER`, `SET search_path = ''` with every referenced object fully qualified (`public.profiles`, `public.connections`, `auth.uid()`), and is the only predicate used by the `profiles`, `photos`, and Storage `photos` bucket read policies.
+Ended connections do not grant visibility after 30 days (messages are purged by then; profile viewing ends immediately at `ended_at`). The function is `STABLE`, `SECURITY DEFINER`, `SET search_path = ''` with every referenced object fully qualified (`public.profiles`, `public.connections`, `auth.uid()`), and is the only predicate used by the `profiles`, `photos`, and Storage `photos` bucket read policies.
 
 ### 6.3 Policies by table
 
@@ -554,7 +635,9 @@ All tables are in `public`. Nothing below grants access to a `private`-schema ob
 | connections | member (`auth.uid() IN (user_a, user_b)`) | none (function) | none (function) | none |
 | messages | member of the connection | member, connection active, `sender_id = auth.uid()` for non-system rows (trigger enforces the rest) | none | none |
 | blocks | own rows as blocker | own rows | none | none |
-| reports | own rows as reporter (without `action` and reviewer fields) or `private.is_admin_mfa` | own rows | admin via function (requires aal2) | none |
+| reports | own rows as reporter (without `action`, `resolution`, and reviewer fields) or `private.is_admin_mfa` | own rows (via function) | admin via function (requires aal2) | none |
+| meeting_checkins | own rows only, never the connection partner's | own rows (via function) | own rows (via function) | none |
+| date_plans | member of the connection | member (via function) | none | member, own plan (via function) |
 | user_abuse_signals | `private.is_admin_mfa` only. Not even the profile owner. | none | none | none |
 | user_daily | own row | none | none | none |
 | consent_events | own rows | own rows (via function) | none, ever | none, ever |
@@ -581,6 +664,8 @@ Every function a client can legitimately call lives in `public`, is created with
 ```
 get_daily_feed, feed_state, decide_feed_item, next_waiting_like, respond_to_like,
 end_connection, set_capacity, block_user, report_user, request_account_deletion,
+pause_account, unpause_account, record_meeting_checkin,
+create_date_plan, get_date_plan, delete_date_plan,
 create_upload_ticket, process_upload, record_consent, am_i_admin,
 admin_review_verification, admin_review_report, admin_ban_user, admin_reinstate_user
 ```
@@ -687,8 +772,8 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 
 ### 7.10 `public.end_connection(connection_id uuid, note text) returns void`
 
-- Preconditions: caller is a member; status `active`; `note` trimmed length between 1 and 300, or one of the preset codes (`not_a_fit`, `met_someone`, `taking_a_break`, `no_spark`) which expand to fixed copy.
-- Effects: status `ended`, `ended_at`, `ended_by = caller`, `end_reason = ended_by_user`. Increment caller's `connections_ended` and `connections_ended_with_note` in `user_abuse_signals`. Insert a system message (`is_system = true`, does not update `last_human_message_at`) in the chat containing the note; this message is the only copy of the note that ever exists, and it is purged with the rest of the connection's messages 30 days after `ended_at`. Both users become `available` again immediately if their count drops below their capacity.
+- Preconditions: caller is a member; status `active`. `note` is nullable: when given, it is either free text 1 to 300 characters or one of the preset codes (`not_a_fit`, `no_chemistry_after_meeting`, `goals_dont_align`, `taking_a_break`, `something_else`) which expand to fixed copy; when omitted, no note is required and none is implied. Section 1's exit principle applies literally here: this function has no other precondition, no cooldown, and no minimum time in the connection.
+- Effects: status `ended`, `ended_at`, `ended_by = caller`, `end_reason = ended_by_user`. Increment caller's `connections_ended` in `user_abuse_signals`, and `connections_ended_with_note` only if a note was given. Insert a system message (`is_system = true`, does not update `last_human_message_at`) containing either the note or a plain "This connection has ended."; this message is the only copy of the note that ever exists, and it is purged with the rest of the connection's messages 30 days after `ended_at`. Both users become `available` again immediately if their count drops below their capacity.
 
 ### 7.11 `public.set_capacity(n smallint) returns void`
 
@@ -701,8 +786,8 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 
 ### 7.13 `public.report_user(target uuid, reason report_reason, details text, connection_id uuid, message_id uuid) returns void`
 
-- Preconditions: target is or was viewable to the caller (connection, feed, or surfaced like, including within the last 30 days). Max 10 per day.
-- Effects: insert report; increment target's `reports_received` in `user_abuse_signals`.
+- Preconditions: for ordinary reasons (`disrespectful`, `scam`, `fake`, `off_platform_push`, `inappropriate_content`, `other`), target is or was viewable to the caller (connection, feed, or surfaced like) within the last 30 days. For `harassment`, `threats_stalking`, `assault_or_violence`, and `underage`, that window does not apply: it is enough that a connection, feed item, or like ever existed between the two, at any point, matching the ability to report a past match about an offline incident. Max 10 per day.
+- Effects: insert the report; compute `severity` from `reason` per the table in section 5.2, unless a caller-supplied `override_severity` from a trusted internal path applies (there is none for ordinary users; admins adjust severity only through `admin_review_report`). Increment target's `reports_received` in `user_abuse_signals`. **If the computed severity is `high` or `critical`, immediately set the target's `profile_status` to `restricted`** (unless already `banned`, which is stricter and unaffected): this removes them from all matching immediately (the existing `mutually_compatible` and `get_daily_feed` candidate checks already require `status = 'active'`, so no separate matching-side change is needed) and blocks them from sending any new message in any connection (enforced by the trigger on `messages`, section 5.2). Existing connections are not ended by this; each partner sees the generic notice from section 2.5 and retains their own immediate End Connection and Block options regardless. If a connection is referenced and has not yet reached its 30-day post-end purge, its messages are exempted from that purge for as long as the report remains open, exactly as already applied to any report.
 
 ### 7.14 `public.request_account_deletion() returns void`
 
@@ -711,7 +796,7 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 
 ### 7.15 Admin functions
 
-`admin_review_verification(id, decision, note)`, `admin_review_report(id, status, action, note)`, `admin_ban_user(profile_id, reason)`, `admin_reinstate_user(profile_id, reason)`. Each: `private.is_admin_mfa(auth.uid())` or `forbidden`; write `admin_audit` first; then act.
+`admin_review_verification(id, decision, note)`, `admin_review_report(id, status, action, note, resolution)`, `admin_ban_user(profile_id, reason)`, `admin_reinstate_user(profile_id, reason)`. Each: `private.is_admin_mfa(auth.uid())` or `forbidden`; write `admin_audit` first; then act. When `admin_review_report` closes a report whose severity had set the target to `restricted`, `resolution` is required: `cleared` returns the target to `active` (restoring normal matching and messaging immediately), `confirmed` moves them to `banned` (section 7.15's existing ban effects apply: end their connections, decline their likes). A `restricted` account is never left in that state after review; it always resolves one way or the other, per section 1's exit principle applying to the platform's own obligations, not only to users.
 
 ### 7.16 `public.create_upload_ticket(kind upload_kind, position smallint, verification_id uuid) returns jsonb`
 
@@ -729,17 +814,34 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 - Preconditions: `kind = 'genotype_data'` may only be `accepted` if `profile_answers.health_section_enabled` is being turned on in the same user flow (checked by the calling server action, not enforced here, since the ordering of "open the section" versus "accept its consent" is a UI concern; the function itself only ever appends the event the caller asked it to append).
 - Effects: insert one row into `consent_events`. Never updates or deletes an existing row.
 
-### 7.19 Scheduled jobs (pg_cron unless noted)
+### 7.19 `public.pause_account() returns void` / `public.unpause_account() returns void`
+
+- Preconditions: caller `active` (for pause) or `paused` (for unpause).
+- Effects: `pause_account` sets `status = 'paused'` and `paused_at = now()`. This alone removes the caller from all matching immediately, through the existing `status = 'active'` requirement already present in `mutually_compatible` and `get_daily_feed`; no separate check is added. It does not touch any existing `connections` row. Any partner in an active connection sees the notice from section 2.5 the next time they view it. `unpause_account` sets `status = 'active'` and `paused_at = null`; the caller re-enters matching immediately if they have an open slot.
+- Invariant: pausing never ends a connection, and never clears a pending like; only the transition into Focused (section 7.7) clears likes, because that transition is triggered by a real connection consuming the last slot, not by a person stepping away.
+
+### 7.20 `public.record_meeting_checkin(connection_id uuid, see_again text, felt_unsafe boolean) returns void`
+
+- Preconditions: caller is a member of the connection (active or recently ended, so a check-in can still be recorded shortly after an End Connection triggered by this same flow).
+- Effects: upsert the caller's own `meeting_checkins` row for this connection; never readable by the other member, under any condition, unlike every other table gated by `can_view_profile`. If `felt_unsafe = true`, increment `unsafe_checkin_flags_received` in `user_abuse_signals` for the other party. Answering `see_again = 'no'` does not itself end the connection; the client offers End Connection as the immediate next step, using the ordinary flow in section 7.10, so the other person only ever sees a plain "this connection has ended," never a recorded preference.
+
+### 7.21 `public.create_date_plan(connection_id uuid, location_text text, planned_at timestamptz, expected_end_at timestamptz) returns jsonb` / `public.get_date_plan(id uuid) returns jsonb` / `public.delete_date_plan(id uuid) returns void`
+
+- Preconditions: caller is a member of an active connection; `expected_end_at > planned_at`; at most one open plan per connection at a time.
+- Effects: `create_date_plan` inserts the row and returns a short, pre-formatted share text naming the match's first name and verification status alongside the plan details, generated for the client to hand to the device's own share sheet; Focus never transmits it and never asks for or stores a third party's contact details. `get_date_plan` lets either member re-fetch the same summary later. `delete_date_plan` lets the creator cancel it early. The row is purged automatically 3 days after `expected_end_at` regardless (section 7.22).
+
+### 7.22 Scheduled jobs (pg_cron unless noted)
 
 | Job | Schedule | Effect |
 |---|---|---|
 | expire_likes | hourly | `pending` likes past `expires_at` become `expired` |
 | refresh_ages | daily 03:00 | recompute `profiles.age` from `birth_date` |
-| connection_inactivity | daily 04:00 | active connections where `last_human_message_at` (or `created_at` if never set) is more than 14 days ago and `nudge_sent_at` is null: insert a system "Still here?" message and set `nudge_sent_at` (does not touch `last_human_message_at`). Those with `nudge_sent_at` older than 3 days and still no human message since: end with `faded`; increment `connections_faded_as_non_responder` in `user_abuse_signals` for whichever party is not `last_human_sender_id` (or for both if `last_human_sender_id` is null) |
+| connection_inactivity | daily 04:00 | active connections where `last_human_message_at` (or `created_at` if never set) is more than 3 days ago and `nudge_sent_at` is null: insert a system "Still here?" message and set `nudge_sent_at` (does not touch `last_human_message_at`). Those where the last human message (or creation) is more than 7 days ago and a second prompt has not been sent: insert a system message asking "Still interested?" with a one-tap End Connection action built into how the client renders that message type, and mark it sent. Those where it has been more than 10 days total with still no human message since: end with `faded`; increment `connections_faded_as_non_responder` in `user_abuse_signals` for whichever party is not `last_human_sender_id` (or for both if `last_human_sender_id` is null). This is a shortened, two-touchpoint version of the original 14-plus-3-day schedule: the manual End Connection action in section 7.10 has never had any waiting period attached to it, in either version; only the automatic backstop for when nobody acts has been shortened, from 17 days total to 10 |
 | purge_feed_items | daily | delete `feed_items` older than 30 days |
 | purge_ended_messages | daily | delete messages of connections ended more than 30 days ago that have no open report; this now includes the closing-note system message, which has no separate retention rule anymore |
 | purge_incoming | hourly | delete anything in the `incoming` bucket older than 1 hour |
 | purge_upload_tickets | daily | delete `upload_tickets` rows that are used, or more than 24 hours past `expires_at` unused |
+| purge_date_plans | daily | delete `date_plans` rows more than 3 days past `expected_end_at` |
 | purge_deleted_accounts | daily, via Vercel Cron calling `/api/cron/purge` with a bearer secret | for each `deletion_requests` past `purge_after`: delete Storage objects across all buckets with the secret key, then call `private._purge_user(profile_id)` |
 | purge_verification_selfies | daily, same route | delete Storage objects for verifications decided more than 1 day ago and null `selfie_path` |
 
@@ -857,6 +959,8 @@ Enforced in the database unless stated, because the database cannot be bypassed.
 - **Harassment:** block is permanent and invisible to the blocked person; reports carry the exact message; ban keeps the email out.
 - **Underage:** date of birth with server-side age check; `underage` report reason routes to immediate ban on confirmation.
 - **Romance scam patterns:** `user_abuse_signals.reports_received` gives admins a repeat-offender view across all time, without exposing any number to users.
+- **Threats, stalking, and violence:** a `high` or `critical` severity report restricts the account automatically, before any human looks at it, per section 2.4, 2.5, and 7.13. The reporting user is never shown a verdict, only confirmation that a human will review it, and never asked to prove anything to unlock this protection.
+- **In-app safety UI is not an emergency service.** Every "I felt unsafe" or "I need help" path (sections 2.4, 2.6) leads first to a plain, unambiguous link to local emergency services and to sharing with a trusted contact, before anything else, and the product never implies it can dispatch help itself.
 
 ### 9.6 Admin surface
 
@@ -958,6 +1062,12 @@ Seed data for local development lives in `supabase/seed.sql` and never contains 
 - End connection: frees both slots; the closing note appears only as a message and is confirmed absent from any `connections` column; `user_abuse_signals` updates for the ender only, and is confirmed unreadable by either user via a direct select.
 - Inactivity attribution: a connection where A sends the last human message and B never replies, after the nudge and fade window, increments `connections_faded_as_non_responder` for B only; a system nudge message does not reset `last_human_message_at`.
 - Block: ends the connection with no note, purges feed items and likes, and `can_view_profile` becomes false both ways.
+- End Connection with no note: assert the partner sees a plain "This connection has ended" system message and that `connections_ended_with_note` does not increment for the ender.
+- Pause: a paused user disappears from a third party's fresh `get_daily_feed()` immediately; their existing active connection's partner can still call `can_view_profile` successfully, still receive messages, and can call `end_connection` immediately with no error; unpausing restores normal matching eligibility.
+- Restriction: filing a report with reason `assault_or_violence` against an `active` target immediately flips their status to `restricted`; a subsequent message attempt from that user in any of their connections is rejected with `account_restricted`; their existing connections remain queryable by their partners; `admin_review_report` with `resolution = 'cleared'` returns them to `active` and restores messaging in the same test.
+- Safety reporting window: a report with reason `harassment` about an interaction more than 30 days old with no current connection, feed item, or like is accepted, where an ordinary `disrespectful` report about the same age interaction is rejected as out of window.
+- Meeting check-in privacy: user A's `meeting_checkins` row for a shared connection is never selectable by user B under any RLS condition, including an active connection between them.
+- Date plan: `date_plans` created by A is readable by B (the connection partner) but contains no contact-detail column at all; the row is gone from a direct select after the purge job runs 3 days past `expected_end_at`.
 - Deletion: after `request_account_deletion()` plus the purge job, no rows remain for the user except retained reports and audit, and Storage is empty for that folder across all three buckets.
 - Upload ticket pipeline: `process_upload` rejects a ticket belonging to another user, an already-used ticket, and an expired ticket (at 5 minutes, well before the underlying Supabase URL's own 2-hour window closes), even though the Storage object itself would still be fetchable by the secret key; a file uploaded via the signed URL larger than the `incoming` bucket ceiling is rejected before it reaches the processing route; a non-image file with an image extension is rejected by byte-sniffing; a successfully processed image leaves no object behind in `incoming`.
 - Consent: a user can record a `sensitive_data` `accepted` event at version 1, then later a second `accepted` event at version 2, without any conflict; the derived current state reflects version 2; a `withdrawn` event is recorded without deleting the prior `accepted` event.
@@ -1054,6 +1164,10 @@ Sober review against section 1:
 | Sidekick patent claims require hiding the profile and refusing likes at the limit | The available/focused mechanism and the clear-on-focus rule were designed for product reasons independent of the patent; whether this reading is closer to or further from the claims is a Phase −1 legal question |
 | Hinge Your Turn Limits raised responsiveness 20% | Waiting list must be answered before new discovery |
 | Diaspora apps bundle dating with community, and community is where the pool comes from | No community lane in v1; launch inside an existing community |
+| A single "end connection" flow conflates a bad date with a dangerous one, confirmed against how Hinge, Tinder, and Bumble each separate ordinary unmatching from safety reporting (third external input) | End, Block, and Report are three distinct actions with distinct guarantees (section 2.4); reports carry a severity that can automatically restrict an account before any human reviews it |
+| `paused` existed as an enum value since the first draft with no defined behavior, and an existing connection could leave the other person waiting indefinitely (third external input) | Pausing is self-service, removes a person from all new matching immediately, and never traps their existing connection partner, who gets an immediate one-tap way out (section 2.5) |
+| A 17-day automatic silence window contradicted the product's own premise of one present connection (third external input) | Shortened to a 10-day automatic backstop; manual ending has never had a waiting period in any version |
+| Building a real emergency-dispatch feature would be a liability and an operational promise this product cannot keep (third external input, explicit caution) | Date planning generates a share-sheet summary the user sends themselves, exactly as Bumble's Share Date works; Focus never stores a third party's contact details and never claims to monitor or dispatch help |
 
 ---
 
@@ -1082,9 +1196,9 @@ Each phase ends with the three review passes in section 12.
 
 ### Phase 2: Core loop (gated by Phase −1)
 
-- Migrations: `feed_items`, `likes`, `connections` (with `last_human_message_at`/`last_human_sender_id`, no `end_note`), `user_abuse_signals`, `blocks`; `private.available()`, `private.can_view_profile()`, `private.mutually_compatible()`, `private.preference_score()`, `public.get_daily_feed()`, `public.feed_state()`, `public.decide_feed_item()`, `private._send_like()`, `private._form_connection()` (including the clear-on-focus step), `public.next_waiting_like()`, `public.respond_to_like()`, `public.set_capacity()`, `public.block_user()`, expire and purge jobs.
-- Screens: home (state machine over `feed_state()`), card, waiting list, connections list, capacity setting. No accountability or score display anywhere.
-- Exit: two test users can connect; the focused-exclusion, symmetric-race, stale-feed-backfill, and clean-slate concurrency tests all pass; RLS and schema-unreachability tests for `likes` and `user_abuse_signals` pass.
+- Migrations: `feed_items`, `likes`, `connections` (with `last_human_message_at`/`last_human_sender_id`, no `end_note`), `user_abuse_signals`, `blocks`; `private.available()`, `private.can_view_profile()`, `private.mutually_compatible()`, `private.preference_score()`, `public.get_daily_feed()`, `public.feed_state()`, `public.decide_feed_item()`, `private._send_like()`, `private._form_connection()` (including the clear-on-focus step), `public.next_waiting_like()`, `public.respond_to_like()`, `public.set_capacity()`, `public.block_user()`, `public.pause_account()`, `public.unpause_account()`, expire and purge jobs. `profiles.paused_at` is added here too, since pausing depends on the same status machinery as the rest of this phase.
+- Screens: home (state machine over `feed_state()`), card, waiting list, connections list, capacity setting, and the paused-partner notice with its one-tap End Connection. No accountability or score display anywhere.
+- Exit: two test users can connect; the focused-exclusion, symmetric-race, stale-feed-backfill, and clean-slate concurrency tests all pass; a paused user's existing connection stays visible and messageable to their partner, who is never blocked from ending it immediately; RLS and schema-unreachability tests for `likes` and `user_abuse_signals` pass.
 
 ### Phase 3: Chat and ending
 
@@ -1094,8 +1208,9 @@ Each phase ends with the three review passes in section 12.
 
 ### Phase 4: Safety, privacy, launch readiness
 
-- `reports`, `report_user()`, admin report review, ban and reinstate, `request_account_deletion()`, purge routes across all three storage buckets and the ticket table, Vercel Cron, `proxy.ts` header verification including the Turnstile CSP, PWA manifest and install prompt, privacy and terms pages, restore drill, production deploy.
-- Exit: red-team checklist fully green on production configuration; a friend can install it on a phone and complete the loop.
+- `reports` (with `severity` and `resolution`), `meeting_checkins`, `date_plans`, `report_user()` (including the safety-reason eligibility window and the automatic restriction effect), `record_meeting_checkin()`, `create_date_plan()`/`get_date_plan()`/`delete_date_plan()`, admin report review with severity-ordered queueing and the restricted-to-active-or-banned resolution, `request_account_deletion()`, purge routes across all three storage buckets, the ticket table, and expired date plans, Vercel Cron, `proxy.ts` header verification including the Turnstile CSP, PWA manifest and install prompt, privacy and terms pages, restore drill, production deploy.
+- Screens: the End/Block/Report split from section 2.4 with severity-appropriate copy, the private post-meeting check-in with its separate "I felt unsafe" branch, the date-plan share-sheet flow and its single check-in prompt, and the plain link to emergency services and trusted-contact sharing that every "I need help" path leads to first.
+- Exit: red-team checklist fully green on production configuration, including that a `high` or `critical` report actually blocks the reported account's outgoing messages within the same request and that an admin can resolve a restriction in either direction; a friend can install it on a phone and complete the loop, including sharing a date plan through their own phone's share sheet.
 
 ---
 
@@ -1124,7 +1239,12 @@ Each phase ends with the three review passes in section 12.
 - **Non-negotiables**: the fields a user can mark must-match.
 - **Heritage**: self-written background, community, origin, language, and raised-in fields. Used in matching only when the user turns "Use heritage in who I'm shown" on.
 - **Importance**: the weight a user gives a heritage rule: nice to have (1), important (3), or must (hard filter).
-- **Faded**: a connection closed by the inactivity job after a nudge went unanswered, attributed internally to whichever party stopped sending human messages.
+- **Faded**: a connection closed by the inactivity job after a nudge went unanswered, attributed internally to whichever party stopped sending human messages. The automatic backstop is 10 days total; manual ending has never had a waiting period.
+- **End, Block, Report**: three distinct ways a connection or interaction can conclude, with three distinct guarantees. See section 2.4. End is ordinary and its note is optional. Block is permanent, silent, and mutual. Report is severity-tiered and can happen with or without a block, and for genuine safety concerns is not bound by the ordinary 30-day reportability window.
+- **Paused**: a self-service state that removes a person from all new matching immediately without ending an existing connection; the partner in that connection is told plainly and can end it immediately, without waiting.
+- **Restricted**: an automatic, provisional state triggered by a high or critical severity report, pending human review; blocks new matching and new outgoing messages everywhere, but does not itself end existing connections. Always resolves to either active or banned; never left standing.
+- **Meeting check-in**: a private, one-sided record of whether either person wants to meet again after marking "We met," never visible to the other party, with a separate branch for feeling unsafe that leads to Block, Report, and emergency resources rather than ordinary breakup language.
+- **Date plan**: a plan (location, time, expected end) a user shares through their own phone's share sheet, not through Focus; Focus never stores a third party's contact details.
 - **aal2**: the Supabase Auth assurance level reached after a second factor (TOTP) is verified in the current session; required for all admin data access and actions.
 - **private schema**: the Postgres schema holding every function a client must never call directly, kept off the project's exposed-schema list so the Data API cannot route to it regardless of grants.
 - **Upload ticket**: an application-level row bounding a direct-to-storage upload to 5 minutes, independent of the underlying Supabase signed URL's own fixed 2-hour validity.
