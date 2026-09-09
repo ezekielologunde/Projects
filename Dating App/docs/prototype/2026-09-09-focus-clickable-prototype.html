@@ -780,12 +780,13 @@
             <div class="stack" style="margin-top:16px;">
               <button class="btn btn-secondary" data-next="shareContact">Share contact</button>
               <button class="btn btn-secondary" data-next="planDate">Plan a date</button>
+              <button class="btn btn-secondary" data-next="checkin">We met</button>
               <button class="btn btn-secondary" data-next="focusNow">Focus on this connection</button>
             </div>
             <div class="spacer"></div>
             <div class="btn-row">
               <button class="btn btn-ghost" data-next="endConnection">End connection</button>
-              <button class="btn btn-ghost" style="color:var(--safety);" data-next="safetyFlow">Block / Report</button>
+              <button class="btn btn-ghost" style="color:var(--safety);" data-next="blockReport">Block / Report</button>
             </div>
           </div>
         </div>
@@ -825,23 +826,23 @@
         </div>
       </section>
 
-      <!-- 19. FOCUS NOW -->
-      <section class="screen" data-screen="focusNow" data-title="Focus Now">
-        <div class="screen-header"><button class="back-btn" data-next="connectionsHome">&#8249;</button><span class="screen-title">Focus Now</span></div>
+      <!-- 19. OPEN TO NEW CONNECTIONS -->
+      <section class="screen" data-screen="focusNow" data-title="Open to new connections">
+        <div class="screen-header"><button class="back-btn" data-next="connectionsHome">&#8249;</button><span class="screen-title">Open to new connections</span></div>
         <div class="screen-body">
           <h2 style="font-size:20px;">Not the same as capacity.</h2>
-          <p class="lede">Capacity is how many people you could reasonably get to know. Focus Now is whether you actually want another one right now.</p>
+          <p class="lede">Capacity is how many people you could reasonably get to know. Open to new connections is whether you actually want another one right now.</p>
           <div class="card" style="margin-top:18px;">
             <div class="toggle-row" style="padding-top:0;">
               <div class="toggle-copy"><div class="t-title">Capacity</div><div class="t-sub">The most people you'd ever hold at once</div></div>
               <span class="cap-readout">3</span>
             </div>
             <div class="toggle-row" style="border-top:1px solid var(--line);">
-              <div class="toggle-copy"><div class="t-title">Focus Now</div><div class="t-sub">Close your remaining slot on your own terms, without changing capacity</div></div>
-              <button class="switch" id="focusNowSwitch" data-toggle></button>
+              <div class="toggle-copy"><div class="t-title">Open to new connections</div><div class="t-sub">Turn off to close your remaining slot on your own terms, without changing capacity</div></div>
+              <button class="switch on" id="focusNowSwitch" data-toggle></button>
             </div>
           </div>
-          <p class="footnote" style="margin-top:14px;" id="focusNowCopy">Off &#8212; you're open to one more connection whenever discovery finds someone.</p>
+          <p class="footnote" style="margin-top:14px;" id="focusNowCopy">On &#8212; you're open to one more connection whenever discovery finds someone.</p>
           <div class="spacer"></div>
           <button class="btn btn-secondary" data-next="connectionsHome">Done</button>
         </div>
@@ -921,6 +922,22 @@
           <div class="spacer"></div>
           <button class="btn btn-primary">Share via message &#8599;</button>
           <button class="btn btn-ghost" data-next="chat">Skip &#8212; I'll do this on my own</button>
+          <button class="btn btn-ghost" style="margin-top:20px; opacity:0.6;" data-next="allOkay">&#8942; Demo: jump to expected finish time</button>
+        </div>
+      </section>
+
+      <!-- 23b. EVERYTHING OKAY (PROACTIVE NUDGE) -->
+      <section class="screen" data-screen="allOkay" data-title="Everything okay?">
+        <div class="screen-body">
+          <div class="center-note">
+            <div class="glyph">&#9679;</div>
+            <h2 style="font-size:22px;">Everything okay?</h2>
+            <p class="lede">Your plan with Jessica said 9:30 PM. This is the one check-in Focus offers &#8212; not a monitoring service.</p>
+          </div>
+          <div class="stack">
+            <button class="btn btn-primary" data-next="checkin">Yes, all good &#8212; how did it go?</button>
+            <button class="btn btn-danger" style="border:1px solid var(--safety-soft);" data-next="safetyFlow">I need help</button>
+          </div>
         </div>
       </section>
 
@@ -937,6 +954,7 @@
             <button class="option" data-next="safetyFlow" style="border-color:var(--safety-soft);"><span class="radio" style="border-color:var(--safety);"></span><span class="opt-title" style="color:var(--safety);">Something made me uncomfortable</span></button>
             <button class="option" data-next="safetyFlow" style="border-color:var(--safety-soft);"><span class="radio" style="border-color:var(--safety);"></span><span class="opt-title" style="color:var(--safety);">I felt unsafe</span></button>
           </div>
+          <p class="footnote" style="text-align:center; margin-top:14px;">Skip this any time &#8212; nothing requires an answer.</p>
         </div>
       </section>
 
@@ -976,25 +994,27 @@
 
       <!-- 26. BLOCK / REPORT -->
       <section class="screen" data-screen="blockReport" data-title="Block / report">
-        <div class="screen-header"><button class="back-btn" data-next="safetyFlow">&#8249;</button><span class="screen-title">Block &amp; report</span></div>
+        <div class="screen-header"><button class="back-btn" data-next="connectionsHome">&#8249;</button><span class="screen-title">Block &amp; report</span></div>
         <div class="screen-body">
-          <div class="card" style="border-color:var(--safety-soft);">
+          <p class="lede">Not just for emergencies &#8212; use this any time you don't want this person to contact or encounter you again, whether or not anything unsafe happened.</p>
+          <div class="card" style="margin-top:14px; border-color:var(--safety-soft);">
             <div class="toggle-row" style="padding-top:0;">
               <div class="toggle-copy"><div class="t-title">Block Jessica</div><div class="t-sub">No note, no explanation. Mutually invisible, permanently.</div></div>
               <button class="switch on" data-toggle></button>
             </div>
           </div>
-          <h2 style="font-size:18px; margin-top:20px;">What happened?</h2>
+          <h2 style="font-size:18px; margin-top:20px;">Report too? Optional.</h2>
           <div class="stack" style="margin-top:12px;">
             <label class="option" data-radiogroup="report"><span class="radio"></span><span class="opt-title">Made me uncomfortable</span></label>
-            <label class="option selected" data-radiogroup="report"><span class="radio"></span><span class="opt-title">Felt unsafe</span></label>
+            <label class="option" data-radiogroup="report"><span class="radio"></span><span class="opt-title">Felt unsafe</span></label>
             <label class="option" data-radiogroup="report"><span class="radio"></span><span class="opt-title">Something else</span></label>
           </div>
           <div class="card" style="margin-top:16px; background:var(--safety-soft); border-color:transparent;">
-            <p style="font-size:13px; color:var(--safety);">A human reviews every report. Focus doesn't act as a court &#8212; this only confirms someone will look at it. If you're in immediate danger, contact local emergency services first.</p>
+            <p style="font-size:13px; color:var(--safety);">A human reviews every report. Focus doesn't act as a court &#8212; this only confirms someone will look at it.</p>
           </div>
           <div class="spacer"></div>
           <button class="btn btn-danger" style="border:1px solid var(--safety-soft);" data-next="connectionsHome">Submit &amp; block</button>
+          <button class="btn btn-ghost" style="color:var(--safety); margin-top:8px;" data-next="safetyFlow">I'm in immediate danger</button>
         </div>
       </section>
 
@@ -1048,7 +1068,7 @@
               <span class="cap-readout" id="cap-readout-settings">3</span>
             </div>
             <div class="toggle-row" style="border-top:1px solid var(--line);">
-              <div class="toggle-copy"><div class="t-title">Focus Now</div><div class="t-sub">Pause discovery without touching capacity</div></div>
+              <div class="toggle-copy"><div class="t-title">Open to new connections</div><div class="t-sub">Turn off to pause discovery without touching capacity</div></div>
               <button class="switch" data-next="focusNow">Edit &#8250;</button>
             </div>
           </div>
@@ -1081,7 +1101,7 @@
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <div class="drawer" id="drawer">
   <button class="drawer-close" id="drawerClose">Close &#10005;</button>
-  <h3>Jump to any of the 30</h3>
+  <h3>Jump to any screen</h3>
   <div id="drawerList"></div>
   <h3 style="margin-top:22px;">Suggested test scenarios</h3>
   <div class="footnote" style="line-height:1.6;">
@@ -1106,7 +1126,7 @@
     ["capacity","Capacity selection"],
     ["mustHaves","Must-haves"],
     ["heritageOptional","Heritage (optional)"],
-    ["healthOptional","Health (optional)"],
+    ["healthOptional","Genetic compatibility (optional)"],
     ["photosStep","Photos"],
     ["verificationStep","Verification"],
     ["homeAvailable","Home / Available"],
@@ -1117,11 +1137,12 @@
     ["connectionsHome","Connections"],
     ["focusedState","Focused"],
     ["slotOpens","Open-slot state"],
-    ["focusNow","Focus Now"],
+    ["focusNow","Open to new connections"],
     ["chat","Chat"],
     ["shareContact","Share contact"],
     ["planDate","Plan date"],
     ["shareDate","Share date"],
+    ["allOkay","Everything okay?"],
     ["checkin","Post-date check-in"],
     ["endConnection","End connection"],
     ["blockReport","Block/report"],
@@ -1201,6 +1222,7 @@
     if(!opts.skipHistory) state.history.push(id);
     var i = indexOf[id];
     document.getElementById("screen-index").textContent = String(i+1).padStart(2,"0");
+    document.getElementById("screen-total").textContent = String(ORDER.length);
     document.getElementById("screen-name-caption").textContent = ORDER[i][1];
     document.querySelectorAll(".drawer-item").forEach(function(btn){
       btn.classList.toggle("active", btn.getAttribute("data-goto") === id);
@@ -1247,8 +1269,8 @@
       if(toggleEl.id === "focusNowSwitch"){
         var on = toggleEl.classList.contains("on");
         document.getElementById("focusNowCopy").textContent = on
-          ? "On — your remaining slot is closed on your own terms. Discovery stays hidden until you turn this off."
-          : "Off — you're open to one more connection whenever discovery finds someone.";
+          ? "On — you're open to one more connection whenever discovery finds someone."
+          : "Off — your remaining slot is closed on your own terms. Discovery stays hidden until you turn this back on.";
       }
       if(toggleEl.id === "geneticToggle"){
         document.getElementById("genotypeDetail").style.display = toggleEl.classList.contains("on") ? "block" : "none";

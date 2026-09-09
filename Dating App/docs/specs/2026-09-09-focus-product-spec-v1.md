@@ -11,8 +11,8 @@
 Non-negotiable for every future feature. A feature that needs to violate one of these gets rejected, not the rule.
 
 1. Capacity is 1, 2, or 3, chosen at onboarding, changeable any time. It is a maximum, not a target.
-2. A person can activate **Focus Now** before reaching capacity, closing their remaining slot on their own terms without changing their capacity number.
-3. At capacity, or with Focus Now on, a person is **Focused**: discovery disappears, their profile disappears from new discovery, they receive no new Likes, and every unresolved Like involving them — sent or received, seen or not — expires. Not paused. Expires.
+2. A person can turn off **Open to new connections** before reaching capacity, closing their remaining slot on their own terms without changing their capacity number.
+3. At capacity, or with Open to new connections off, a person is **Focused**: discovery disappears, their profile disappears from new discovery, they receive no new Likes, and every unresolved Like involving them — sent or received, seen or not — expires. Not paused. Expires.
 4. Ending a connection, unmatching, blocking, either account being deleted, either account being suspended or banned, or a safety exit all release the freed slot immediately. Nobody waits on a ghost, an admin, or a timer to get their slot back — the 10-day automatic close (section 9) is a backstop for someone who never acts, never a requirement to wait before acting themselves.
 5. Personal contact information is never shared automatically, by the product, in any direction. The account's own sign-in email or phone is never surfaced as a suggested contact method.
 6. No hidden backup queue. Nothing a person liked or was liked by survives becoming Focused.
@@ -35,13 +35,13 @@ Not four mutually exclusive buckets — two independent things plus a per-connec
 **Attention state** (computed continuously for an `active` account, never stored as its own field):
 
 ```
-AVAILABLE := active, not paused, Focus Now is off, and active connections < capacity
+AVAILABLE := active, not paused, Open to new connections is on, and active connections < capacity
 FOCUSED    := active and not AVAILABLE
 ```
 
 **Per-connection state** (zero to `capacity` of these exist at once, each independent): a connection is simply active or ended; how it ended is one of the exit routes in section 9, and ending is what changes the count that AVAILABLE's formula depends on.
 
-Everything else is an event, not a status: match formed, connection ended, blocked, reported, account deleted, date happened, slot opened, Focus Now turned on, Focus Now turned off. Events move a person between states; they are never a state themselves, and none of them is displayed as a count, a badge, or a history a user browses.
+Everything else is an event, not a status: match formed, connection ended, blocked, reported, account deleted, date happened, slot opened, Open to new connections turned off, Open to new connections turned back on. Events move a person between states; they are never a state themselves, and none of them is displayed as a count, a badge, or a history a user browses.
 
 ## 3. The capacity engine, worked example
 
@@ -54,10 +54,10 @@ Capacity 3, starting from zero:
   -> Amara connects
 2/3  AVAILABLE  -- the person now chooses:
        A. Keep discovery open, look for one more, or
-       B. Focus Now
+       B. Turn off Open to new connections
 ```
 
-If B: `2/3 FOCUSED` — no discovery, no new Likes, profile hidden, even though one slot is numerically open. This is the whole point of Focus Now existing as separate from capacity.
+If B: `2/3 FOCUSED` — no discovery, no new Likes, profile hidden, even though one slot is numerically open. This is the whole point of Open to new connections existing as separate from capacity.
 
 If A, and Jessica connects: `3/3 FOCUSED` — automatically now, since capacity is reached. Every other pending Like, in both directions, expires the instant this happens (rule 3). This is **Starting Fresh**: the screen never names who expired or how many there were — not "your interest in Tolu and Rachel expired," just that discovery is now closed. Expiring is not rejecting; if the two people are ever independently available and compatible again later, Focus may introduce them like anyone else, with neither ever told the earlier Like existed.
 
@@ -171,25 +171,25 @@ Thirty screens, matched one-to-one with the clickable prototype (`Dating App/doc
 | 16 | Connections | The Connection screen list |
 | 17 | Focused | Rule 3, made visible |
 | 18 | Open-slot state | Section 3's "stay focused / explore one" choice |
-| 19 | Focus Now | Rule 2, as its own control |
+| 19 | Open to new connections | Rule 2, as its own control |
 | 20 | Chat | Ordinary, no presence indicators |
 | 21 | Share contact | Section 7 |
 | 22 | Plan a date | Section 8 |
 | 23 | Share date (trusted contact) | Section 8, the optional safety nudge |
-| 24 | Post-date check-in | Section 8, private |
+| 24 | Post-date check-in | Section 8, private; reachable by tapping "We met" any time, or from the near-expected-end-time "everything okay" prompt |
 | 25 | End connection | Section 9, row 1 |
 | 26 | Block / report | Section 9, rows 3-4 |
 | 27 | Safety flow | Section 9, immediate danger |
 | 28 | You're caught up | Section 5 |
 | 29 | Review preferences | Section 5's third choice, rule 9 respected |
-| 30 | Settings | Capacity and Focus Now as separate controls |
+| 30 | Settings | Capacity and Open to new connections as separate controls |
 
 ### Suggested test scenarios
 
 For whoever runs the comprehension test — hand the prototype to serious daters with no explanation, then give them these, one at a time, and watch what they do before saying anything:
 
 1. "You chose capacity 1. Your connection stopped responding." — do they find End Connection without being told it exists?
-2. "You chose capacity 3. You have two connections and like both." — do they understand Focus Now, or do they assume they're stuck choosing one?
+2. "You chose capacity 3. You have two connections and like both." — do they understand Open to new connections, or do they assume they're stuck choosing one?
 3. "You've seen everybody nearby who fits." — does "You're caught up" read as normal, or as broken?
 4. "The date felt unsafe." — how fast do they find Block/Report, unprompted?
 5. "You want to give Sarah your number." — is contact sharing obvious, and do they understand it's one-sided?
@@ -200,4 +200,8 @@ If any of these needs a five-minute explanation first, that's a screen to fix, n
 
 ## Appendix: architecture items already patched
 
-For traceability against this round's input, not because anything changed here — all confirmed already fixed in the architecture document (sections 0.1-0.2, 0.6) before this document was written: the private SQL helper schema, the explicit RPC allowlist, symmetric availability checks (spec'd for Phase 2, not yet built), read-time Focused exclusion (same), the `upload_tickets` ticket record replacing a raw object path, `processUpload(ticketId)`, the Turnstile-compatible CSP, append-only consent history, the single-copy closing-note fix, True Focus's pending-Like expiration, and Focus Now. Nothing in this list needed a new fix; each is cited in the architecture document's own revision history.
+For traceability against this round's input, not because anything changed here — all confirmed already fixed in the architecture document (sections 0.1-0.2, 0.6) before this document was written: the private SQL helper schema, the explicit RPC allowlist, symmetric availability checks (spec'd for Phase 2, not yet built), read-time Focused exclusion (same), the `upload_tickets` ticket record replacing a raw object path, `processUpload(ticketId)`, the Turnstile-compatible CSP, append-only consent history, the single-copy closing-note fix, True Focus's pending-Like expiration, and what this document now calls Open to new connections. Nothing in this list needed a new fix; each is cited in the architecture document's own revision history.
+
+## Appendix: renamed since first freeze
+
+"Focus Now" throughout this document is the same control and mechanism as before, renamed to **Open to new connections** (architecture document, section 0.13) after a separate, independently-built prototype's tested copy proved warmer than the original name — a double negative ("not Focus Now") a person had to mentally invert. Nothing about rules 1-11, the states in section 2, or the capacity engine in section 3 changed; only the name and, correspondingly, which boolean value now reads as "on."
