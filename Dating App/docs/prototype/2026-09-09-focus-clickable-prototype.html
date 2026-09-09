@@ -380,7 +380,7 @@
     <span class="sub">clickable prototype &#183; no backend</span>
   </div>
   <div class="top-actions">
-    <span class="progress-caption"><span class="mono" id="screen-index">01</span> / 20 &#183; <span id="screen-name-caption">Landing</span></span>
+    <span class="progress-caption"><span class="mono" id="screen-index">01</span> / <span class="mono" id="screen-total">30</span> &#183; <span id="screen-name-caption">Landing</span></span>
   </div>
 </div>
 
@@ -398,17 +398,30 @@
             <p class="lede" style="margin-top:18px; max-width:280px;">Choose how many people you can genuinely get to know at once. See a few, not a feed. Stop appearing to anyone new the moment you don't have room.</p>
           </div>
           <div class="stack">
-            <button class="btn btn-primary" data-next="onboarding">Get started</button>
-            <button class="btn btn-ghost" data-next="onboarding">I already have an account</button>
+            <button class="btn btn-primary" data-next="signIn">Get started</button>
+            <button class="btn btn-ghost" data-next="signIn">I already have an account</button>
           </div>
         </div>
       </section>
 
-      <!-- 2. ONBOARDING -->
-      <section class="screen" data-screen="onboarding" data-title="Onboarding">
-        <div class="screen-header"><button class="back-btn" data-next="landing">&#8249;</button><span class="screen-title">Your profile</span></div>
+      <!-- 2. SIGN IN -->
+      <section class="screen" data-screen="signIn" data-title="Sign in">
+        <div class="screen-header"><button class="back-btn" data-next="landing">&#8249;</button></div>
         <div class="screen-body">
-          <div class="eyebrow">Step 3 of 9</div>
+          <h2 style="font-size:20px;">Sign in with a code</h2>
+          <p class="lede">No passwords anywhere in Focus. We'll email a 6-digit code.</p>
+          <label class="field" style="margin-top:16px;">Email<input type="text" value="ezekiel@example.com"></label>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" data-next="basicProfile">Send code</button>
+          <p class="footnote" style="text-align:center; margin-top:10px;">(prototype: continues without a real code)</p>
+        </div>
+      </section>
+
+      <!-- 3. BASIC PROFILE -->
+      <section class="screen" data-screen="basicProfile" data-title="Basic profile">
+        <div class="screen-header"><button class="back-btn" data-next="signIn">&#8249;</button><span class="screen-title">Your profile</span></div>
+        <div class="screen-body">
+          <div class="eyebrow">Step 3 of 10</div>
           <h2 style="font-size:22px;">The basics</h2>
           <p class="lede">Two to six photos, a face in the first. Three short prompts instead of a bio.</p>
           <div class="stack" style="margin-top:20px;">
@@ -417,13 +430,30 @@
             <label class="field">A weekend well spent looks like&#8230;<textarea rows="2">Cooking something new, a long walk, and one good conversation.</textarea></label>
           </div>
           <div class="spacer"></div>
+          <button class="btn btn-primary" data-next="relationshipIntent">Continue</button>
+        </div>
+      </section>
+
+      <!-- 4. RELATIONSHIP INTENT -->
+      <section class="screen" data-screen="relationshipIntent" data-title="Relationship intent">
+        <div class="screen-header"><button class="back-btn" data-next="basicProfile">&#8249;</button><span class="screen-title">What you're looking for</span></div>
+        <div class="screen-body">
+          <div class="eyebrow">Step 4 of 10</div>
+          <h2 style="font-size:22px;">What are you looking for?</h2>
+          <p class="lede">Casual isn't offered here &mdash; all three answers below are serious.</p>
+          <div class="stack" style="margin-top:18px;">
+            <button class="option" data-radiogroup="intent"><span class="radio"></span><span class="opt-title">Marriage</span></button>
+            <button class="option selected" data-radiogroup="intent"><span class="radio"></span><span class="opt-title">A life partner</span></button>
+            <button class="option" data-radiogroup="intent"><span class="radio"></span><span class="opt-title">A serious relationship</span></button>
+          </div>
+          <div class="spacer"></div>
           <button class="btn btn-primary" data-next="capacity">Continue</button>
         </div>
       </section>
 
-      <!-- 3. CHOOSE CAPACITY -->
+      <!-- 5. CHOOSE CAPACITY -->
       <section class="screen" data-screen="capacity" data-title="Choose capacity">
-        <div class="screen-header"><button class="back-btn" data-next="onboarding">&#8249;</button><span class="screen-title">Capacity</span></div>
+        <div class="screen-header"><button class="back-btn" data-next="relationshipIntent">&#8249;</button><span class="screen-title">Capacity</span></div>
         <div class="screen-body">
           <h2 style="font-size:22px;">How many people can you genuinely get to know at once?</h2>
           <p class="lede">This is a ceiling, not a target. Having room does not mean you have to use it &#8212; you can change this any time.</p>
@@ -482,11 +512,96 @@
             </div>
           </div>
           <div class="spacer"></div>
-          <button class="btn btn-primary" data-next="introduction">Finish setup</button>
+          <button class="btn btn-primary" data-next="heritageOptional">Continue</button>
         </div>
       </section>
 
-      <!-- 5. TODAY'S INTRODUCTION -->
+      <!-- 7. HERITAGE (OPTIONAL) -->
+      <section class="screen" data-screen="heritageOptional" data-title="Heritage (optional)">
+        <div class="screen-header"><button class="back-btn" data-next="mustHaves">&#8249;</button><span class="screen-title">Heritage</span></div>
+        <div class="screen-body">
+          <div class="eyebrow">Optional</div>
+          <h2 style="font-size:20px;">Heritage, on your terms</h2>
+          <p class="lede">Self-written. Only affects who you're shown if you turn it on below &mdash; the system never infers it.</p>
+          <label class="field" style="margin-top:16px;">Family origin country<input type="text" value="Nigeria"></label>
+          <div class="card" style="margin-top:16px;">
+            <div class="toggle-row" style="padding-top:0;">
+              <div class="toggle-copy"><div class="t-title">Use heritage in who I'm shown</div><div class="t-sub">Off by default</div></div>
+              <button class="switch" data-toggle></button>
+            </div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" data-next="healthOptional">Continue</button>
+          <button class="btn btn-ghost" data-next="healthOptional">Skip</button>
+        </div>
+      </section>
+
+      <!-- 8. HEALTH (OPTIONAL) -->
+      <section class="screen" data-screen="healthOptional" data-title="Health (optional)">
+        <div class="screen-header"><button class="back-btn" data-next="heritageOptional">&#8249;</button><span class="screen-title">Health compatibility</span></div>
+        <div class="screen-body">
+          <div class="eyebrow">Optional &middot; its own separate consent</div>
+          <h2 style="font-size:20px;">Health compatibility</h2>
+          <p class="lede">Some people consider inherited blood conditions when dating seriously. Focus never infers this and never requires it.</p>
+          <div class="card" style="margin-top:16px;">
+            <div class="toggle-row" style="padding-top:0;">
+              <div class="toggle-copy"><div class="t-title">Include this section</div></div>
+              <button class="switch" data-toggle></button>
+            </div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" data-next="photosStep">Continue</button>
+          <button class="btn btn-ghost" data-next="photosStep">Skip</button>
+        </div>
+      </section>
+
+      <!-- 9. PHOTOS -->
+      <section class="screen" data-screen="photosStep" data-title="Photos">
+        <div class="screen-header"><button class="back-btn" data-next="healthOptional">&#8249;</button><span class="screen-title">Photos</span></div>
+        <div class="screen-body">
+          <div class="eyebrow">Step 9 of 10</div>
+          <h2 style="font-size:20px;">Two to six photos</h2>
+          <p class="lede">A face, clearly, in the first slot.</p>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:16px;">
+            <div class="card" style="aspect-ratio:1; display:flex; align-items:center; justify-content:center; padding:0; background:linear-gradient(160deg,#C9A98F,#7A5B45); color:#fff; font-size:12px;">Slot 1</div>
+            <div class="card" style="aspect-ratio:1; display:flex; align-items:center; justify-content:center; padding:0; font-size:12px; color:var(--ink-faint); border-style:dashed;">Slot 2</div>
+            <div class="card" style="aspect-ratio:1; display:flex; align-items:center; justify-content:center; padding:0; font-size:12px; color:var(--ink-faint); border-style:dashed;">Slot 3</div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" data-next="verificationStep">Continue</button>
+        </div>
+      </section>
+
+      <!-- 10. VERIFICATION -->
+      <section class="screen" data-screen="verificationStep" data-title="Verification">
+        <div class="screen-header"><button class="back-btn" data-next="photosStep">&#8249;</button><span class="screen-title">Quick verification</span></div>
+        <div class="screen-body">
+          <h2 style="font-size:20px;">One quick photo</h2>
+          <p class="lede">A human reviews this before your profile is visible to anyone &mdash; never automated.</p>
+          <div class="card" style="margin-top:16px; text-align:center; padding:26px 16px;">
+            <p style="font-size:13.5px;">Pose: <strong>Peace sign</strong>, randomly assigned</p>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" data-next="homeAvailable">Submit for review</button>
+        </div>
+      </section>
+
+      <!-- 11. HOME / AVAILABLE -->
+      <section class="screen" data-screen="homeAvailable" data-title="Home / Available">
+        <div class="screen-body" style="padding-top:40px;">
+          <div class="eyebrow">You're approved</div>
+          <h2 style="font-size:22px;">You're Available.</h2>
+          <p class="lede">Capacity 2. Nobody yet &mdash; up to 5 introductions a day, one at a time, whenever you're ready.</p>
+          <div class="card" style="margin-top:18px;">
+            <span class="cap-readout">0 / 2</span>
+            <div class="slots" style="margin-top:8px;"><div class="slot"></div><div class="slot"></div></div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" data-next="introduction">See today's introduction</button>
+        </div>
+      </section>
+
+      <!-- 12. TODAY'S INTRODUCTION -->
       <section class="screen" data-screen="introduction" data-title="Today's introduction">
         <div class="screen-header"><span class="screen-title">Today's introduction</span></div>
         <div class="screen-body">
@@ -560,17 +675,42 @@
       </section>
 
       <!-- 9. CONNECTIONS HOME -->
-      <section class="screen" data-screen="connectionsHome" data-title="Connections home">
-        <div class="screen-header"><span class="screen-title">Your connections</span></div>
-        <div class="screen-body">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="cap-readout" id="cap-readout-9">3 / 3</span>
-            <span class="footnote">capacity, not a leaderboard</span>
+      <section class="screen" data-screen="connectionsHome" data-title="Connections">
+        <div id="conn-list-view">
+          <div class="screen-header"><span class="screen-title">Your connections</span></div>
+          <div class="screen-body">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span class="cap-readout" id="cap-readout-9">3 / 3</span>
+              <span class="footnote">capacity, not a leaderboard</span>
+            </div>
+            <div class="slots" id="slots-9" style="margin-top:8px; margin-bottom:18px;"></div>
+            <div class="stack" id="conn-list"></div>
+            <div class="spacer"></div>
+            <p class="footnote" style="text-align:center;">Discovery is hidden while you're Focused.</p>
           </div>
-          <div class="slots" id="slots-9" style="margin-top:8px; margin-bottom:18px;"></div>
-          <div class="stack" id="conn-list"></div>
-          <div class="spacer"></div>
-          <p class="footnote" style="text-align:center;">Discovery is hidden while you're Focused.</p>
+        </div>
+        <div id="conn-detail-view" style="display:none; flex-direction:column; height:100%;">
+          <div class="screen-header"><button class="back-btn" id="connDetailBack">&#8249;</button><span class="screen-title" id="connDetailTitle">Amara</span></div>
+          <div class="screen-body">
+            <p class="footnote" id="connDetailSub">Connected 6 days ago</p>
+            <button class="btn btn-secondary" style="margin-top:14px;" data-next="chat">Message</button>
+            <div class="card" style="margin-top:18px;">
+              <div class="toggle-row" style="padding-top:0; padding-bottom:0;">
+                <div class="toggle-copy"><div class="t-title">Relationship progress</div></div>
+                <span class="footnote">Talking</span>
+              </div>
+            </div>
+            <div class="stack" style="margin-top:16px;">
+              <button class="btn btn-secondary" data-next="shareContact">Share contact</button>
+              <button class="btn btn-secondary" data-next="planDate">Plan a date</button>
+              <button class="btn btn-secondary" data-next="focusNow">Focus on this connection</button>
+            </div>
+            <div class="spacer"></div>
+            <div class="btn-row">
+              <button class="btn btn-ghost" data-next="endConnection">End connection</button>
+              <button class="btn btn-ghost" style="color:var(--safety);" data-next="safetyFlow">Block / Report</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -602,13 +742,13 @@
             </div>
           </div>
           <div class="stack">
-            <button class="btn btn-primary" data-next="introduction">Explore introductions</button>
-            <button class="btn btn-ghost" data-next="connectionsHome">Not right now</button>
+            <button class="btn btn-secondary" data-next="connectionsHome">Stay focused on Sarah &amp; Amara</button>
+            <button class="btn btn-primary" data-next="introduction">Explore one new introduction</button>
           </div>
         </div>
       </section>
 
-      <!-- 12. FOCUS NOW -->
+      <!-- 19. FOCUS NOW -->
       <section class="screen" data-screen="focusNow" data-title="Focus Now">
         <div class="screen-header"><button class="back-btn" data-next="connectionsHome">&#8249;</button><span class="screen-title">Focus Now</span></div>
         <div class="screen-body">
@@ -647,7 +787,7 @@
           </div>
           <div class="btn-row" style="margin-top:14px;">
             <button class="btn btn-secondary" data-next="shareContact" style="font-size:13px;">Share contact</button>
-            <button class="btn btn-secondary" data-next="datePlan" style="font-size:13px;">Plan a date</button>
+            <button class="btn btn-secondary" data-next="planDate" style="font-size:13px;">Plan a date</button>
           </div>
         </div>
       </section>
@@ -672,8 +812,8 @@
         </div>
       </section>
 
-      <!-- 15. PLAN / SHARE DATE -->
-      <section class="screen" data-screen="datePlan" data-title="Plan a date">
+      <!-- 22. PLAN A DATE -->
+      <section class="screen" data-screen="planDate" data-title="Plan a date">
         <div class="screen-header"><button class="back-btn" data-next="chat">&#8249;</button><span class="screen-title">Plan a date</span></div>
         <div class="screen-body">
           <div class="stack">
@@ -685,12 +825,29 @@
             <p style="font-size:13.5px;">Focus never stores your contact's number or holds your location. It only remembers the plan long enough to ask "everything okay?" near your expected finish.</p>
           </div>
           <div class="spacer"></div>
-          <button class="btn btn-primary">Share with a trusted contact &#8599;</button>
-          <p class="footnote" style="text-align:center; margin-top:8px;">Opens your phone's own share sheet &#8212; texted the same way you'd tell a friend.</p>
+          <button class="btn btn-primary" data-next="shareDate">Save plan</button>
         </div>
       </section>
 
-      <!-- 16. POST-DATE CHECK-IN -->
+      <!-- 23. SHARE DATE (TRUSTED CONTACT) -->
+      <section class="screen" data-screen="shareDate" data-title="Share date">
+        <div class="screen-header"><button class="back-btn" data-next="planDate">&#8249;</button><span class="screen-title">Share with someone you trust</span></div>
+        <div class="screen-body">
+          <p class="lede">Optional. Sent through your own phone's share sheet &#8212; the same way you'd already text a friend.</p>
+          <div class="card" style="margin-top:16px;">
+            <p style="font-size:13.5px; line-height:1.6;">
+              <strong>Meeting Jessica</strong> (verified)<br>
+              Lupo Verde, 14th St<br>
+              Friday, 7:00 PM &ndash; expected back by 9:30 PM
+            </p>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary">Share via message &#8599;</button>
+          <button class="btn btn-ghost" data-next="chat">Skip &#8212; I'll do this on my own</button>
+        </div>
+      </section>
+
+      <!-- 24. POST-DATE CHECK-IN -->
       <section class="screen" data-screen="checkin" data-title="Post-date check-in">
         <div class="screen-header"><span class="screen-title">Private check-in</span></div>
         <div class="screen-body">
@@ -700,9 +857,26 @@
             <button class="option" data-next="chat"><span class="radio"></span><span class="opt-title">I'd see them again</span></button>
             <button class="option" data-next="chat"><span class="radio"></span><span class="opt-title">I'm unsure</span></button>
             <button class="option" data-next="endConnection"><span class="radio"></span><span class="opt-title">Not for me</span></button>
-            <button class="option" data-next="blockReport" style="border-color:var(--safety-soft);"><span class="radio" style="border-color:var(--safety);"></span><span class="opt-title" style="color:var(--safety);">Something made me uncomfortable</span></button>
-            <button class="option" data-next="blockReport" style="border-color:var(--safety-soft);"><span class="radio" style="border-color:var(--safety);"></span><span class="opt-title" style="color:var(--safety);">I felt unsafe</span></button>
+            <button class="option" data-next="safetyFlow" style="border-color:var(--safety-soft);"><span class="radio" style="border-color:var(--safety);"></span><span class="opt-title" style="color:var(--safety);">Something made me uncomfortable</span></button>
+            <button class="option" data-next="safetyFlow" style="border-color:var(--safety-soft);"><span class="radio" style="border-color:var(--safety);"></span><span class="opt-title" style="color:var(--safety);">I felt unsafe</span></button>
           </div>
+        </div>
+      </section>
+
+      <!-- 27. SAFETY FLOW -->
+      <section class="screen" data-screen="safetyFlow" data-title="Safety flow">
+        <div class="screen-body">
+          <div class="center-note">
+            <div class="glyph safety">!</div>
+            <h2 style="font-size:20px;">This skips ordinary breakup language.</h2>
+            <p class="lede">Focus isn't a court. These options are always available, immediately, no waiting period.</p>
+          </div>
+          <div class="stack">
+            <button class="btn btn-danger" style="border:1px solid var(--safety-soft);">Contact emergency services &#8599;</button>
+            <button class="btn btn-secondary" data-next="planDate">Share with a trusted contact</button>
+            <button class="btn btn-primary" data-next="blockReport">Block &amp; Report Jessica</button>
+          </div>
+          <p class="footnote" style="text-align:center; margin-top:12px;">If you're in immediate danger, contact local emergency services first &#8212; before doing anything in the app.</p>
         </div>
       </section>
 
@@ -723,9 +897,9 @@
         </div>
       </section>
 
-      <!-- 18. BLOCK / REPORT -->
+      <!-- 26. BLOCK / REPORT -->
       <section class="screen" data-screen="blockReport" data-title="Block / report">
-        <div class="screen-header"><button class="back-btn" data-next="chat">&#8249;</button><span class="screen-title">Block &amp; report</span></div>
+        <div class="screen-header"><button class="back-btn" data-next="safetyFlow">&#8249;</button><span class="screen-title">Block &amp; report</span></div>
         <div class="screen-body">
           <div class="card" style="border-color:var(--safety-soft);">
             <div class="toggle-row" style="padding-top:0;">
@@ -747,8 +921,8 @@
         </div>
       </section>
 
-      <!-- 19. POOL EXHAUSTED -->
-      <section class="screen" data-screen="poolExhausted" data-title="Pool exhausted">
+      <!-- 28. YOU'RE CAUGHT UP -->
+      <section class="screen" data-screen="poolExhausted" data-title="You're caught up">
         <div class="screen-body">
           <div class="center-note">
             <div class="glyph">&#183;</div>
@@ -758,9 +932,32 @@
           <div class="stack">
             <button class="btn btn-secondary" data-next="poolExhausted">Wait &#8212; tell me when someone new fits</button>
             <button class="btn btn-secondary" data-next="poolExhausted">Explore a little farther (distance only)</button>
-            <button class="btn btn-secondary" data-next="mustHaves">Review my soft preferences</button>
+            <button class="btn btn-secondary" data-next="reviewPreferences">Review my soft preferences</button>
           </div>
           <p class="footnote" style="text-align:center; margin-top:10px;">A must-have is only ever loosened by you, on purpose, here.</p>
+        </div>
+      </section>
+
+      <!-- 29. REVIEW PREFERENCES -->
+      <section class="screen" data-screen="reviewPreferences" data-title="Review preferences">
+        <div class="screen-header"><button class="back-btn" data-next="poolExhausted">&#8249;</button><span class="screen-title">What's narrowing your pool</span></div>
+        <div class="screen-body">
+          <p class="lede">These are soft preferences, not must-haves &#8212; loosening one only reorders who you see, it never becomes a new must-have.</p>
+          <div class="stack" style="margin-top:16px;">
+            <div class="card">
+              <div class="toggle-row" style="padding-top:0; padding-bottom:0;">
+                <div class="toggle-copy"><div class="t-title">Distance</div><div class="t-sub">Currently narrowing your pool the most</div></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="toggle-row" style="padding-top:0; padding-bottom:0;">
+                <div class="toggle-copy"><div class="t-title">Faith practice level</div><div class="t-sub">A smaller factor</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-secondary" data-next="mustHaves">Edit my must-haves instead</button>
+          <button class="btn btn-primary" style="margin-top:10px;" data-next="poolExhausted">Done, no changes</button>
         </div>
       </section>
 
@@ -807,32 +1004,53 @@
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <div class="drawer" id="drawer">
   <button class="drawer-close" id="drawerClose">Close &#10005;</button>
-  <h3>Jump to any of the 20</h3>
+  <h3>Jump to any of the 30</h3>
   <div id="drawerList"></div>
+  <h3 style="margin-top:22px;">Suggested test scenarios</h3>
+  <div class="footnote" style="line-height:1.6;">
+    Read one aloud, then watch what the tester does before saying anything else.
+    <ol style="padding-left:18px; margin-top:8px;">
+      <li>"You chose capacity 1. Your connection stopped responding."</li>
+      <li>"You chose capacity 3. You have two connections and like both."</li>
+      <li>"You've seen everybody nearby who fits."</li>
+      <li>"The date felt unsafe."</li>
+      <li>"You want to give Sarah your number."</li>
+    </ol>
+  </div>
 </div>
 
 <script>
 (function(){
   var ORDER = [
-    ["landing","Landing"],
-    ["onboarding","Onboarding"],
-    ["capacity","Choose capacity"],
+    ["landing","Welcome"],
+    ["signIn","Sign in"],
+    ["basicProfile","Basic profile"],
+    ["relationshipIntent","Relationship intent"],
+    ["capacity","Capacity selection"],
     ["mustHaves","Must-haves"],
-    ["introduction","Today's introduction"],
+    ["heritageOptional","Heritage (optional)"],
+    ["healthOptional","Health (optional)"],
+    ["photosStep","Photos"],
+    ["verificationStep","Verification"],
+    ["homeAvailable","Home / Available"],
+    ["introduction","Introduction"],
     ["fullProfile","Full profile"],
-    ["interestedSent","Interested / Not for me"],
+    ["interestedSent","Interested"],
     ["connectionFormed","Connection formed"],
-    ["connectionsHome","Connections home"],
-    ["focusedState","Focused state"],
-    ["slotOpens","One slot opens"],
+    ["connectionsHome","Connections"],
+    ["focusedState","Focused"],
+    ["slotOpens","Open-slot state"],
     ["focusNow","Focus Now"],
     ["chat","Chat"],
     ["shareContact","Share contact"],
-    ["datePlan","Plan / share date"],
+    ["planDate","Plan date"],
+    ["shareDate","Share date"],
     ["checkin","Post-date check-in"],
     ["endConnection","End connection"],
-    ["blockReport","Block / report"],
-    ["poolExhausted","Pool exhausted"],
+    ["blockReport","Block/report"],
+    ["safetyFlow","Safety flow"],
+    ["poolExhausted","You're caught up"],
+    ["reviewPreferences","Review preferences"],
     ["settings","Settings"]
   ];
   var indexOf = {};
@@ -866,10 +1084,21 @@
       var row = document.createElement("button");
       row.className = "conn-row";
       row.style.width = "100%"; row.style.border = "1px solid var(--line)";
-      row.setAttribute("data-next","chat");
+      row.setAttribute("data-conn-detail", c.name);
       row.innerHTML = '<span class="avatar"></span><span><span class="cn-name">'+c.name+'</span><br><span class="cn-sub">'+c.note+'</span></span><span class="chev">&#8250;</span>';
       wrap.appendChild(row);
     });
+  }
+
+  function showConnDetail(name){
+    document.getElementById("connDetailTitle").textContent = name;
+    document.getElementById("connDetailSub").textContent = name === "Amara" ? "Connected 6 days ago" : "Connected recently";
+    document.getElementById("conn-list-view").style.display = "none";
+    document.getElementById("conn-detail-view").style.display = "flex";
+  }
+  function showConnList(){
+    document.getElementById("conn-list-view").style.display = "block";
+    document.getElementById("conn-detail-view").style.display = "none";
   }
 
   function refreshCapacityUI(){
@@ -891,6 +1120,7 @@
     var target = document.querySelector('.screen[data-screen="'+id+'"]');
     if(!target) return;
     target.classList.add("active");
+    if(id === "connectionsHome") showConnList();
     if(!opts.skipHistory) state.history.push(id);
     var i = indexOf[id];
     document.getElementById("screen-index").textContent = String(i+1).padStart(2,"0");
@@ -905,6 +1135,15 @@
 
   // wire declarative [data-next] and [data-action]
   document.addEventListener("click", function(e){
+    var detailEl = e.target.closest("[data-conn-detail]");
+    if(detailEl){
+      showConnDetail(detailEl.getAttribute("data-conn-detail"));
+      return;
+    }
+    if(e.target.closest("#connDetailBack")){
+      showConnList();
+      return;
+    }
     var nextEl = e.target.closest("[data-next]");
     if(nextEl){
       showScreen(nextEl.getAttribute("data-next"));

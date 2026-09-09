@@ -99,6 +99,10 @@ A sixth input proposed a "product constitution," a worked "True Focus" example, 
 - **Also produced, outside this document:** a 20-screen clickable prototype (no backend, `Dating App/docs/prototype/2026-09-09-focus-clickable-prototype.html`) covering the full proposed screen list, for the recommended pre-Phase-2 comprehension test with real users — Focus cannot run that test itself; a person has to.
 - **Not done, and out of scope for this document:** recruiting and running the 10-20-person user test. That is the project owner's step, not an engineering one.
 
+### 0.8 Focus Product Specification v1 (2026-09-09)
+
+The product-facing content of sections 1 and 2 (rules, states, screens, copy) now also lives in its own document, `2026-09-09-focus-product-spec-v1.md`, written for a designer or test facilitator rather than an engineer, and frozen as v1: no new product decisions, only what was already decided here, organized for a different reader. This document remains authoritative for schema, security, and function behavior; that one is authoritative for what a screen says and does. The clickable prototype was expanded from 20 to the 30 screens that document enumerates, matched one-to-one, and re-verified.
+
 ---
 
 ## 1. Purpose, goals, non-goals
