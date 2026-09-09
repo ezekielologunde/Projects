@@ -552,21 +552,40 @@
       </section>
 
       <!-- 8. HEALTH (OPTIONAL) -->
-      <section class="screen" data-screen="healthOptional" data-title="Health (optional)">
-        <div class="screen-header"><button class="back-btn" data-next="heritageOptional">&#8249;</button><span class="screen-title">Health compatibility</span></div>
+      <section class="screen" data-screen="healthOptional" data-title="Genetic compatibility (optional)">
+        <div class="screen-header"><button class="back-btn" data-next="heritageOptional">&#8249;</button><span class="screen-title">Genetic compatibility</span></div>
         <div class="screen-body">
-          <div class="eyebrow">Optional &middot; its own separate consent</div>
-          <h2 style="font-size:20px;">Health compatibility</h2>
-          <p class="lede">Some people consider inherited blood conditions when dating seriously. Focus never infers this and never requires it.</p>
-          <div class="card" style="margin-top:16px;">
+          <div class="eyebrow">Optional &middot; private &middot; its own separate consent</div>
+          <h2 style="font-size:20px;">Genetic compatibility</h2>
+          <p class="lede">Some people want to consider inherited genetic conditions when dating seriously, especially if biological children are part of the plan. Focus never infers this and never requires it.</p>
+          <div class="card" style="margin-top:16px; background:var(--accent-soft); border-color:transparent;">
+            <p style="font-size:13px; color:var(--accent-soft-ink);">Your information is never shown on your profile. Other people can't see your result, or know whether you completed this section.</p>
+          </div>
+          <div class="card" style="margin-top:12px;">
             <div class="toggle-row" style="padding-top:0;">
-              <div class="toggle-copy"><div class="t-title">Include this section</div></div>
+              <div class="toggle-copy"><div class="t-title">Set this up privately</div></div>
+              <button class="switch" data-toggle id="geneticToggle"></button>
+            </div>
+          </div>
+          <div id="genotypeDetail" style="display:none; margin-top:14px;">
+            <p style="font-size:12.5px; color:var(--ink-muted); margin-bottom:8px;">What would you like Focus to consider?</p>
+            <select style="width:100%; padding:12px 13px; border-radius:12px; border:1px solid var(--line); background:var(--surface); color:var(--ink); font-size:14px;">
+              <option>AA</option>
+              <option>AS</option>
+              <option>AC</option>
+              <option>SS</option>
+              <option>SC</option>
+              <option>I don't know</option>
+              <option>I'd rather not provide this</option>
+            </select>
+            <div class="toggle-row" style="border-top:1px solid var(--line); margin-top:10px; padding-bottom:0;">
+              <div class="toggle-copy"><div class="t-title">Make this a must-have?</div><div class="t-sub">Excludes incompatible pairings from your own pool only &mdash; never shown to anyone as a reason.</div></div>
               <button class="switch" data-toggle></button>
             </div>
           </div>
           <div class="spacer"></div>
           <button class="btn btn-primary" data-next="photosStep">Continue</button>
-          <button class="btn btn-ghost" data-next="photosStep">Skip</button>
+          <button class="btn btn-ghost" data-next="photosStep">Skip for now</button>
         </div>
       </section>
 
@@ -1185,8 +1204,11 @@
       if(toggleEl.id === "focusNowSwitch"){
         var on = toggleEl.classList.contains("on");
         document.getElementById("focusNowCopy").textContent = on
-          ? "On &#8212; your remaining slot is closed on your own terms. Discovery stays hidden until you turn this off."
-          : "Off &#8212; you're open to one more connection whenever discovery finds someone.";
+          ? "On — your remaining slot is closed on your own terms. Discovery stays hidden until you turn this off."
+          : "Off — you're open to one more connection whenever discovery finds someone.";
+      }
+      if(toggleEl.id === "geneticToggle"){
+        document.getElementById("genotypeDetail").style.display = toggleEl.classList.contains("on") ? "block" : "none";
       }
       return;
     }

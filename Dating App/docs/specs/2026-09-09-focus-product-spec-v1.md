@@ -20,6 +20,9 @@ Non-negotiable for every future feature. A feature that needs to violate one of 
 8. No paid ranking, visibility, capacity, or filters. Ever, permanently — not a launch decision, a promise.
 9. A must-have is never silently relaxed. Only the person who set it can loosen it, deliberately, on their own settings screen.
 10. An empty discovery result — "You're caught up" — is a correct, acceptable outcome, not a failure state to paper over with a wider funnel.
+11. Health and genetic information is never part of a dating profile. The one optional exception — genotype — is a private matching input only, for the rule the person themselves chose. Never shown to anyone, never a badge, never a filter menu.
+
+**Genetic compatibility, not "health compatibility."** The only health-adjacent thing Focus ever asks for is optional hemoglobin genotype — never a general health-conditions field. It's must-only: it can exclude someone from a candidate pool, but it never appears as a plain-language "why you're shown this person" line the way kids or faith do, never on a profile, never as a badge, and never sent anywhere it doesn't strictly need to go. Once a connection is seriously progressing, Focus may show one private, dismissible line encouraging an actual conversation with a healthcare professional — not a verdict, and not before then.
 
 **Height is a non-negotiable like any other, not a special case.** A person states it as a preference relative to their own height (taller / around / shorter / a specific range), not a raw number — people's own height predicts what they prefer better than a fixed target does. It defaults to a soft preference that only nudges ranking; making it a hard filter takes the same explicit second confirmation as any other must-have (rule 9), it's reciprocal in both directions, never paywalled (rule 8), and never shown as a headline trait — it sits inline with occupation, same size, same weight.
 
@@ -155,7 +158,7 @@ Thirty screens, matched one-to-one with the clickable prototype (`Dating App/doc
 | 05 | Capacity selection | Rule 1 |
 | 06 | Must-haves | Rule 9's setting exists and is legible |
 | 07 | Heritage (optional) | Off by default, self-written |
-| 08 | Health (optional) | Off by default, separate consent |
+| 08 | Genetic compatibility (optional) | Off by default, separate consent, never shown to anyone (rule 11) |
 | 09 | Photos | Face required in slot one |
 | 10 | Verification | Human review, not automated |
 | 11 | Home / Available | What AVAILABLE actually looks like |
