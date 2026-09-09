@@ -40,7 +40,25 @@ A third input, verified against Hinge, Tinder, Bumble, and RAINN's current docum
 6. **Automatic inactivity handling is shortened** from a 14-day nudge and a 3-day grace period (17 days total) to a 3-day nudge, a 7-day explicit prompt with a one-tap end option, and a 10-day automatic close, since the original window was not a floor on when someone could leave (manual ending was always available) but its length worked against the product's own premise of a single, present connection.
 7. **A private post-meeting check-in and an optional, deliberately minimal date-safety feature are added**, scoped narrowly per the recommendation not to build anything resembling an emergency-dispatch system: Focus generates a plan a person shares through their own phone's share sheet, exactly as Bumble's Share Date does, rather than Focus storing or sending a third party's contact information itself. See sections 2.5 and 2.6.
 
-Everything else from all three inputs was confirmed sound and is carried forward unchanged: the database-as-referee principle, likes being unselectable by users, deterministic-lock concurrency handling, the negative-authorization test list, and Realtime over Postgres Changes for chat.
+### 0.4 Ranking philosophy and pool exhaustion (2026-09-09)
+
+A fourth input, cross-checked against Tinder's, Bumble's, and Hinge's own published matching and Discover documentation, addressed something the first three left alone entirely: what actually decides which 5 people appear, and what Focus says when there is honestly no one left. Five changes follow from it:
+
+1. **Matching is now explicitly reciprocal, not one-directional.** The original `preference_score` only scored the viewer's own heritage preferences against a candidate. It never asked whether the candidate would also want to see the viewer. Section 7.3 is rewritten around a symmetric score that credits both sides' soft preferences about each other, confirmed against the academic distinction between an ordinary recommender and a reciprocal one, where both parties' interest has to be modeled, not just one.
+2. **A fixed non-goal is replaced with a more precise one.** "No AI matchmaking" is replaced with a specific commitment: no opaque model decides compatibility in v1; ranking is built from explicit mutual preferences, distance, activity, and reciprocal scoring, all of it inspectable; a learned ranking model is something to consider later, only with real outcome data, never allowed to touch a hard dealbreaker or infer a sensitive attribute. See section 1.
+3. **Discovery stops pretending the pool is infinite.** When every mutually eligible, currently available person has already been shown, Focus says so plainly and offers to expand the search radius, review which soft preferences are narrowing things, or simply wait, rather than quietly re-serving people already passed on. See the new section 2.7.
+4. **"Not for me" and "Don't show again" are now two different actions**, alongside the existing Block from section 2.4: an ordinary pass that can, much later and only through an explicit reconsideration prompt, resurface if the person's profile has materially changed, versus a permanent exclusion for someone the user already knows and never wants to see suggested at all, such as an ex or a coworker. See section 2.7.
+5. **No compatibility percentage is ever shown.** The internal score exists only to order candidates. What a person sees is a short, factual explanation of what the two of them actually share, and one of the five daily introductions is named as the strongest, not as a prophecy but as a plain statement of why it ranked first.
+
+### 0.5 Capacity as a ceiling, permanent unmatching, and deliberate contact sharing (2026-09-09)
+
+A fifth input, confirmed against Tinder's, Hinge's, Bumble's, and RAINN's current documentation on unmatching, past-match reporting, in-app calling, and contact-safety guidance, sharpened three things at capacity 2 and 3 specifically, where more than one active connection makes "ceiling" and "target" easy to conflate:
+
+1. **Two people who have ever connected, however it ended, are never recommended to each other again in v1.** This turns out to already be true in this design and simply hadn't been stated plainly: `get_daily_feed`'s candidate query (section 7.4) excludes anyone with any row at all in `connections`, not only an active one, and connection rows are never deleted (section 5.2), so an ended pair is permanently excluded by the same mechanism that was already there. No new table was needed; the gap was in the prose, not the schema. Section 2.4 now says this explicitly, matching how Hinge and Tinder both treat unmatching as permanent rather than something to revisit later.
+2. **Capacity is a ceiling, not a quota.** A person with capacity 3 and two active connections has one open slot by the numbers, but may not want a third right now, and forcing them to either take it or lower their capacity setting entirely was a false choice. A new, separate toggle, "Open to new connections," lets a person close that remaining slot on their own terms without touching their capacity number, and reopen it just as easily. See the revised section 2.2 and section 7.1.
+3. **Contact information is shared only deliberately, one method at a time, and never mutually by default.** Sharing a phone number is not something Focus does automatically once two people seem to be getting along; it is an explicit action, confirmed against RAINN's guidance to withhold personal contact details until real trust exists and Hinge's warning that scammers push people off-platform quickly. Sharing from one side never reveals the other side's information in return. See the new section 2.8.
+
+Everything else from all five inputs was confirmed sound and is carried forward unchanged: the database-as-referee principle, likes being unselectable by users, deterministic-lock concurrency handling, the negative-authorization test list, and Realtime over Postgres Changes for chat.
 
 ---
 
@@ -59,6 +77,8 @@ A dating web app where each person chooses how many people they can genuinely ge
 5. **Safety and privacy as design constraints.** Every rule above is enforced in the database, not the browser. Sensitive attributes (faith, ethnicity, genotype, who you want to meet, location) are minimised, access-controlled through functions rather than raw table access, and deletable. Every function that is not meant to be called directly by a client lives where a client cannot reach it, not merely where it is labeled as such.
 6. **Accountability, held internally.** Connections can end with an optional closing note. How people end connections is tracked to catch abuse and repeat ghosting; it is not displayed as a score, because a displayed score creates pressure to keep talking to someone rather than end things honestly.
 7. **Focus limits options. It must never limit exits.** Capacity limits who you can start something new with. It must never make it harder to leave something that isn't working, isn't safe, or has simply run its course. Ending a connection, blocking, and reporting are always available immediately, with no note required, no timer to wait out, and no reputation cost. Where this document's mechanisms ever seem to conflict with that sentence, this sentence wins.
+8. **Explain, don't score.** Every candidate is ordered by an internal reciprocal score that a person never sees. What they see instead is a short, factual account of what the two of them share, never a percentage, never a claim that an algorithm has found their soulmate. A number that precise about something this uncertain is a lie dressed as precision.
+9. **Contact information is shared only deliberately, one method at a time, and never mutually by default.** Focus never reveals a signup email, a real name beyond what a person chose to show, or any way to reach someone outside the app, unless that person explicitly chose to share it, in that moment, with that specific person. Sharing never happens automatically, is never a side effect of matching or messaging, and one person sharing never grants the other's information in return.
 
 ### A permanent commitment versus a v1 decision
 
@@ -71,7 +91,8 @@ These are different promises and the document keeps them distinct:
 
 - Differential access of any kind tied to payment (see above; this is permanent, not just v1).
 - A friends or community lane, events, or a social feed.
-- AI matchmaking, AI conversation help, or personality tests.
+- **No opaque AI deciding compatibility in v1.** Recommendations are built from explicit mutual preferences, distance, activity, and a reciprocal ranking score (section 7.3), all of it inspectable and none of it hidden inside a trained model. A learned ranking model is a possibility for later, and only once there is enough real outcome data (whether people who connected actually met, and wanted to again) to train it on, never before, and never in a way that overrides a hard dealbreaker or infers a sensitive attribute a user didn't state.
+- AI conversation help, or personality tests.
 - Video calls, voice notes, or photo messaging inside chat.
 - Native iOS or Android apps.
 - Automated selfie verification. A human reviews every selfie.
@@ -109,11 +130,18 @@ This section restates the product design so the architecture can be checked agai
 Every profile has a computed attention state, not a stored one:
 
 ```
-available(p) := active_connections(p) < capacity(p)
+available(p) := profiles.status = 'active'
+             AND paused_at IS NULL
+             AND focus_now = false
+             AND active_connections(p) < capacity(p)
 focused(p)   := not available(p)
 ```
 
-- **Discovery** shows up to 5 profiles a day, one at a time, Like or Pass, no going back. Candidates are restricted to people who are currently `available`, checked both when a day's feed is first generated and again every time that feed is read back, so a person who becomes focused after being shown that morning is removed from the feed the next time it loads and, where possible, replaced so the day's allotment stays at 5. **A focused person never appears in anyone's discovery feed.**
+Capacity is a ceiling, not a quota: choosing 3 means "at most three people at once," never "the product expects three." A person with capacity 3 and two active connections has room for a third by the numbers, but may genuinely not want one yet, and shouldn't have to lower their capacity setting just to say so. `focus_now` is a separate, self-service toggle for exactly this: turning it on closes the remaining slot immediately, on the person's own terms, without changing their capacity number, and turning it off reopens it just as immediately. While it's on, a person with open slots by the numbers is still `focused` in every sense that matters: no discovery for them, and they don't appear as a candidate to anyone else either. Home simply says "You have room for one more connection whenever you're ready," with the choice to look or not left entirely to the person, rather than a gallery of introductions appearing the moment a slot opens.
+
+- **Discovery** shows up to 5 profiles a day, one full profile at a time, not a stack of cards to flick through: photo, non-negotiables, prompts, and a short, factual explanation of what the two people actually share, with two plain buttons, Interested and Not for me, not a swipe gesture. A swipe can exist later as an optional shortcut, but the visual language deliberately avoids anything that reads as a card game, because the research behind this product is specifically about what repeated quick judgment does to people's willingness to accept anyone at all. There is no going back once decided. Candidates are restricted to people who are currently `available`, checked both when a day's feed is first generated and again every time that feed is read back, so a person who becomes focused after being shown that morning is removed from the feed the next time it loads and, where possible, replaced so the day's allotment stays at 5. **A focused person never appears in anyone's discovery feed.**
+- **Ranking is reciprocal, and the strongest introduction is named.** Candidates who pass every hard non-negotiable (section 7.2) are ordered by a score that credits both sides' soft preferences about each other, not just the viewer's (section 7.3), so a good match doesn't get buried because it happens to be more appealing to Focus's model than to the general population. The single highest-scoring candidate each day is shown first and labeled Focus Pick, with the other four introduced simply as today's introductions; no percentage is ever shown, only a short line naming what the two of them share ("You're both looking for marriage. Both want children. 8 miles apart."), because a number that precise about something this uncertain would be a false promise, not information. One of the five is deliberately chosen from outside the top-ranked set rather than by score alone, so the feed doesn't quietly narrow itself into an ever-smaller caricature of whoever a person has liked before.
+- **"Not for me" and "Don't show again" are different.** Passing on a profile ("Not for me") is an ordinary, reversible-in-principle decision: Focus doesn't recycle it, but if that person's profile changes substantially and a long time has passed, it may be offered again later, only through the explicit reconsideration prompt in section 2.7, never by quietly reappearing in the ordinary five. "Don't show again," reached through a small menu rather than a prominent button, is permanent and immediate, for someone the user already knows, like an ex or a coworker, and never resurfaces under any condition. Neither of these is Block, which is a safety action covered in section 2.4 and ends an existing connection; "Don't show again" can be used on someone who was never a match at all.
 - **Waiting list.** When you have an open slot, people who liked you while they, and you, were both still available are shown one at a time before new discovery. Only likes from senders who are currently `available` are ever surfaced. You Like or Pass each surfaced item. There is no count and no list view.
 - **Likes and forming a connection.** A like is silent. The other person never sees a count and there is no "who liked you" screen. Sending a like requires both the sender and the recipient to be available at that exact moment, re-checked immediately before the like is created or a connection forms, closing the race where a person becomes focused between being shown a card and acting on it. Likes that go unanswered expire after 30 days.
 - **When your last open slot fills, you enter Focused and every other pending like involving you, in either direction, is cleared.** Not merely paused: cleared. Anyone who had liked you and was still waiting, and anyone you had liked and were still waiting on, is let go. This is deliberate. When you become available again, you start from nothing: no old admirers resurface, no old interests linger. The cost is fewer eventual matches; the point is that focus means focus, not a queue with the lid on.
@@ -151,7 +179,7 @@ focused(p)   := not available(p)
 
 These are three different actions with three different guarantees, confirmed against how Hinge, Tinder, and Bumble draw this same line. Conflating them, which the first two drafts of this document effectively did by routing everything through one `end_connection` function, would have meant a person fleeing harassment goes through the same "pick a reason, write a note" flow as someone who just didn't feel a spark.
 
-**End Connection.** For no chemistry, differing goals, a change of mind, or a date that was simply bad but not unsafe. Either person can end at any moment, with no waiting period. A short closing note is offered, never required: "Would you like to leave a short closing note?" with preset options (not a romantic fit, no chemistry after meeting, our goals don't align, taking a break, something else) or free text up to 300 characters, or nothing at all. If nothing is given, the other person sees a plain "This connection has ended." Both slots free immediately. This is the ordinary, expected outcome of giving one person real attention and it not working out, and the product should never make it feel like a failure.
+**End Connection.** For no chemistry, differing goals, a change of mind, or a date that was simply bad but not unsafe. Either person can end at any moment, with no waiting period. A short closing note is offered, never required: "Would you like to leave a short closing note?" with preset options (not a romantic fit, no chemistry after meeting, our goals don't align, taking a break, something else) or free text up to 300 characters, or nothing at all. If nothing is given, the other person sees a plain "This connection has ended." Both slots free immediately. This is the ordinary, expected outcome of giving one person real attention and it not working out, and the product should never make it feel like a failure. **Once two people have connected and that connection ends, however it ends, they are never shown to each other again**, matching how both Hinge and Tinder treat unmatching as permanent rather than something to revisit. There is no reconnect or rematch feature in v1.
 
 **Block.** For "I do not want this person to contact or encounter me again," whether or not anything unsafe happened. No note, no explanation, no reason given to either the blocked person or stored against them beyond the block itself. The connection ends, messages stop, both profiles become mutually invisible everywhere (feed, waiting list, search), any likes between them are gone, and the slot frees. The blocked person is shown the same generic "This connection has ended" and has no way to learn a block occurred, matching how Tinder and Bumble both keep blocking indistinguishable from an ordinary unmatch on the receiving end.
 
@@ -170,6 +198,30 @@ Three different things can make a person stop being available, and they behave d
 Focus has no way to know when two people actually meet in person, and it should not try to find out through location tracking: that would contradict the privacy stance in section 8.2. Instead, either person can mark "We met" inside their connection at any time they choose, entirely privately; the other person is never told that this was tapped. Marking it opens a short, private check-in, seen by nobody else: would you like to see them again (yes, not sure, no), and how did it feel, with a clearly separate "I felt unsafe" option that skips straight past ordinary breakup language to Block, Report, and a plain link to local emergency services and to sharing with a trusted contact. Answering "no" here is just a fast path into the ordinary End Connection flow from section 2.4; the other person never learns "they said no to another date," only that the connection ended, exactly as any other end would look to them.
 
 For the date itself, Focus offers a narrow, deliberately unambitious safety feature modeled on Bumble's Share Date rather than Tinder's Noonlight, because building a real emergency-monitoring service is a liability, an operational burden, and a promise of rescue this product has no business making. Inside an active connection, either person can fill in a plan (where, when, and an expected end time) and get back a short, shareable summary naming their match by first name and verification status, which they send themselves, through their own phone's own share sheet, to whomever they choose, exactly as they could already do by texting a friend, just formatted cleanly. Focus never sends this itself and never stores the friend's phone number or email; it only holds the plan's details briefly, for the duration of the date, so it can offer one check-in prompt near the expected end time asking simply "everything okay," with "I need help" leading to the same safety-first screen as "I felt unsafe" above. This is a nudge toward a habit RAINN already recommends, not a monitoring system, and the copy says so plainly rather than implying a promise the product cannot keep.
+
+### 2.7 When the pool runs out
+
+In a smaller city, a narrow age band, or a specific faith or diaspora preference, a person will eventually see everyone who is currently mutually eligible and available. This is not an edge case to paper over with a wider funnel that quietly reintroduces people already rejected; it is a state the product should name honestly, confirmed against how differently Tinder and Bumble handle it today by expanding distance and preferences automatically unless a person opts out.
+
+When there is nobody left to show, Focus says plainly: "You're caught up. You've seen everyone currently available who meets your must-haves. New people will appear here as they join or become available." Three explicit choices follow, none of them automatic:
+
+- **Keep my preferences and wait.** Do nothing; be told when someone genuinely new becomes eligible.
+- **Explore a little farther.** Widen the distance radius, only with the person's own explicit action, never silently.
+- **Review my preferences.** See which soft, non-must heritage or lifestyle preferences are narrowing the pool the most, and loosen them if desired. A must-have is never weakened without the person doing it themselves, deliberately, on this screen.
+
+Only from this caught-up state, never mixed into the ordinary daily five, Focus may also offer a small number of previously passed profiles for reconsideration, and only when a real reason exists: the passed person's profile has materially changed since the pass (a new photo, a changed prompt, or an updated non-negotiable answer), at least 90 days have passed, and the two are still mutually compatible under current preferences. This is framed as "8 people you passed months ago have updated their profiles. Review them, or keep your passes as they are," and the person decides; nothing reappears on its own. A profile marked "Don't show again" is never included in this, regardless of time or changes.
+
+Optionally, after a handful of profiles in a session, Focus may ask a single lightweight, fully optional question: "Anything missing from today's people?" with a short checklist (attraction wasn't there, lifestyle wasn't right, felt too different, felt too similar, distance, values, nothing specific). This exists to give Focus qualitative signal about what a v1, non-learning ranking system might be missing, not to interrogate a person about why they rejected someone; there is no "why didn't you like this specific person" prompt, ever.
+
+### 2.8 Sharing contact information, deliberately
+
+Focus never reveals a signup email, real name beyond what a person chose to display, or any way to reach someone outside the app automatically. The only path is Share Contact, reached from inside an active connection: a person picks exactly one method (phone, email, WhatsApp, Signal, Instagram, or other), types the value, and sees a plain warning before it sends: "This will be shared with [name]. If you later end or block this connection, Focus cannot remove information they've already saved outside the app." Sharing is never mutual by default: one person sharing their phone number does not reveal the other's, who makes their own separate choice, if any. This mirrors RAINN's guidance to withhold personal contact details until real trust has been established, and Hinge's own warning that people trying to move a conversation off-platform quickly are a known scam pattern, which cuts the other way if Focus itself did the revealing automatically.
+
+The distinction that matters is between the public profile and a private, already-active connection: an Instagram handle is never permitted on a public profile, in a prompt, or anywhere a stranger in discovery could see it, because that is exactly the follower-farming and validation-seeking behavior "nothing to collect" (section 1) exists to design out. Inside a connection two people already chose to have, sharing an Instagram handle, or anything else, is their own decision to make, deliberately, one field at a time.
+
+Focus does not attempt to detect or block a phone number, handle, or messaging app name typed casually into an ordinary chat message between two connected adults; that would be paternalism dressed as safety, and these are consenting adults who are free to move their conversation wherever they like. Where such a pattern is detected in a message, the only effect is a one-time, dismissible line shown to the sender before it goes: "Keep your personal information private until you're comfortable sharing it. Once it's out there, Focus can't control how it's used." followed by Send anyway, never a block. The same detection continues to apply, unchanged, to public-facing profile prompts, where the concern is different: a stranger farming followers from a dating profile, not two people who have already chosen each other.
+
+Sharing a contact method, and reaching some of the other milestones in an active connection (a real conversation, a date plan created, marking "we met," wanting to meet again), together form an internal sense of how a connection is progressing. This is never shown to users as a level, a badge, or a score, matching section 1's "explain, don't score" principle; it exists only so Focus, in aggregate and never per-person in a way anyone can see, can tell whether the product is actually helping people move toward meeting rather than just accumulating messages.
 
 ---
 
@@ -339,6 +391,7 @@ verification_decision: approved | rejected
 consent_kind:     terms | privacy | sensitive_data | genotype_data
 consent_action:   accepted | withdrawn
 upload_kind:      photo | selfie
+contact_method:   phone | email | whatsapp | signal | instagram | other
 ```
 
 ### 5.2 Tables
@@ -350,6 +403,7 @@ upload_kind:      photo | selfie
 | id | uuid PK | equals `auth.users.id` |
 | status | profile_status | default `onboarding` |
 | paused_at | timestamptz | nullable; set by `pause_account()`, cleared by `unpause_account()`; see section 2.5 |
+| focus_now | boolean | default false; set by `focus_now_on()`/`focus_now_off()`; closes the person's remaining capacity slot on their own terms without changing `capacity` itself; see section 2.2 |
 | first_name | text | 1 to 30 chars |
 | age | smallint | maintained by trigger from `profile_private.birth_date` and nightly job |
 | gender | gender | |
@@ -530,6 +584,14 @@ Index on `(status, severity, created_at)` so `high` and `critical` reports sort 
 
 Unique `(profile_id, connection_id)`: one check-in per person per connection, updatable. RLS: own rows only, no policy grants the connection partner access to the other's row, ever; this is deliberately more private than the connection's own message thread. A `felt_unsafe = true` value increments `user_abuse_signals.unsafe_checkin_flags_received` for the other party in the same connection, admin-only, in addition to whatever the person does next (Block, Report, or nothing).
 
+**permanent_excludes**
+
+`(viewer_id, target_id)` PK, created_at. One-directional and permanent: only removes `target_id` from `viewer_id`'s own candidate pool, unlike `blocks`, which is mutual and ends any active connection. Written only by `dont_show_again()` (section 7.23); no user ever sees this list, only the absence of that person from their own discovery.
+
+**feed_feedback**
+
+`(user_id, day)` PK, reasons text[] (values drawn from a small fixed set: `no_attraction`, `lifestyle`, `too_different`, `too_similar`, `distance`, `values`, `nothing_specific`), created_at. Entirely optional, written only by `submit_feed_feedback()` (section 7.24), used only for qualitative product review; never read by any ranking function, since v1's ranking is deliberately deterministic and inspectable, not adaptive (section 1).
+
 **date_plans**
 
 | Column | Type | Notes |
@@ -542,6 +604,10 @@ Unique `(profile_id, connection_id)`: one check-in per person per connection, up
 | created_at | timestamptz | |
 
 No third-party contact information is ever stored here: sharing happens through the user's own device share sheet, exactly as Bumble's Share Date works, so Focus never holds a friend's phone number or email. Purged automatically 3 days after `expected_end_at` (section 7.19), since the row has no purpose once the window it describes has passed.
+
+**contact_share_events**
+
+`(id, connection_id, shared_by, method contact_method, created_at)`. Deliberately holds no value column: the actual phone number, email, or handle is sent as an ordinary chat message (section 7.26) and lives and dies under the same message retention as everything else in that connection (section 8.4), never duplicated here. This table exists only to give an internal, never-shown sense of how a connection is progressing (section 2.8); it records that a share of a given type happened and by whom, nothing more. Written by `share_contact()` (section 7.27).
 
 **user_abuse_signals** (admin-only; never user-selectable, not even the owner's own row)
 
@@ -637,7 +703,10 @@ All tables are in `public`. Nothing below grants access to a `private`-schema ob
 | blocks | own rows as blocker | own rows | none | none |
 | reports | own rows as reporter (without `action`, `resolution`, and reviewer fields) or `private.is_admin_mfa` | own rows (via function) | admin via function (requires aal2) | none |
 | meeting_checkins | own rows only, never the connection partner's | own rows (via function) | own rows (via function) | none |
+| permanent_excludes | none for users, by design (section 7.23) | own rows (via function) | none | none |
+| feed_feedback | own rows | own rows (via function) | none | none |
 | date_plans | member of the connection | member (via function) | none | member, own plan (via function) |
+| contact_share_events | member of the connection | none (function only, via `share_contact`) | none | none |
 | user_abuse_signals | `private.is_admin_mfa` only. Not even the profile owner. | none | none | none |
 | user_daily | own row | none | none | none |
 | consent_events | own rows | own rows (via function) | none, ever | none, ever |
@@ -665,12 +734,14 @@ Every function a client can legitimately call lives in `public`, is created with
 get_daily_feed, feed_state, decide_feed_item, next_waiting_like, respond_to_like,
 end_connection, set_capacity, block_user, report_user, request_account_deletion,
 pause_account, unpause_account, record_meeting_checkin,
+dont_show_again, submit_feed_feedback, reconsider_passed_profiles,
+focus_now_on, focus_now_off, share_contact,
 create_date_plan, get_date_plan, delete_date_plan,
 create_upload_ticket, process_upload, record_consent, am_i_admin,
 admin_review_verification, admin_review_report, admin_ban_user, admin_reinstate_user
 ```
 
-Every other function used by section 7, including `available`, `mutually_compatible`, `preference_score`, `can_view_profile`, `is_admin`, `is_admin_mfa`, `normalize_key`, `_send_like`, `_form_connection`, and `_purge_user`, lives in schema `private`. This is the actual fix for the exposure found in the second review: an earlier draft called these "internal" in prose while defining several of them without the underscore convention the draft itself claimed to enforce, and the enforcement mechanism (a grant) was never actually withheld from them. The `private` schema is never added to the project's list of exposed schemas (the Supabase default is `public` and `graphql_public`), so these functions cannot be reached through PostgREST at all, regardless of any `GRANT` statement. Grants inside `private` are still set narrowly as ordinary Postgres hygiene, but the control being relied on is schema exposure, not a grant that a future migration could accidentally loosen.
+Every other function used by section 7, including `available`, `mutually_compatible`, `reciprocal_score`, `can_view_profile`, `is_admin`, `is_admin_mfa`, `normalize_key`, `_send_like`, `_form_connection`, and `_purge_user`, lives in schema `private`. This is the actual fix for the exposure found in the second review: an earlier draft called these "internal" in prose while defining several of them without the underscore convention the draft itself claimed to enforce, and the enforcement mechanism (a grant) was never actually withheld from them. The `private` schema is never added to the project's list of exposed schemas (the Supabase default is `public` and `graphql_public`), so these functions cannot be reached through PostgREST at all, regardless of any `GRANT` statement. Grants inside `private` are still set narrowly as ordinary Postgres hygiene, but the control being relied on is schema exposure, not a grant that a future migration could accidentally loosen.
 
 Every exposed `public` function starts with:
 
@@ -712,22 +783,30 @@ True when all of the following hold. This function is intentionally about compat
 
 `nice_to_have` and `important` never affect compatibility, only ordering.
 
-### 7.3 `private.preference_score(viewer uuid, target uuid) returns int` (STABLE)
+### 7.3 `private.reciprocal_score(a uuid, b uuid) returns int` (STABLE)
 
-Zero when the viewer's `use_heritage` is false. Otherwise the weighted sum of the viewer's satisfied heritage rules: `important` counts 3, `nice_to_have` counts 1, `must` counts 0 because it already filtered. Used for ordering only.
+Replaces the one-directional `preference_score` from the first two drafts, which only scored the viewer's own preferences against a candidate and never asked whether the candidate would also want to see the viewer, a gap confirmed against the academic distinction between an ordinary recommender and a reciprocal one, where both parties' interest has to be modeled. This function is symmetric by construction: `reciprocal_score(a, b) = reciprocal_score(b, a)` always, since it is the sum of what each side would score about the other, calculated the same way regardless of which one is asking.
+
+For each of `(a, b)` and `(b, a)` in turn, sum:
+
+- Heritage: zero if that person's `use_heritage` is false; otherwise the weighted sum of their satisfied heritage rules about the other, `important` counts 3, `nice_to_have` counts 1 (unchanged from the prior draft's `preference_score`, just now applied in both directions and added together).
+- Soft lifestyle alignment: +1 if `timeline` matches exactly, +1 if `relocate` matches exactly. These are display-only fields with no hard-filter role (section 2.3); this is the only place they affect anything, and only as a small nudge to ordering, never as a filter.
+
+The total is halved and rounded, so a change to only one side's preferences doesn't silently double-count. Distance and recency are applied separately as tie-breakers in `get_daily_feed`, not folded into this score, so this function stays a pure statement of "how much do these two people's own stated preferences point toward each other," inspectable and explainable, matching the goal in section 1 that a candidate is ordered by something a person could, if they asked, actually have explained to them (section 7.4's `shared_factors`), never by an opaque model. Used for ordering and for generating the explanation shown to the user; never for filtering, and never shown to a user as a number.
 
 ### 7.4 `public.get_daily_feed() returns setof feed_card`
 
-`feed_card` is a composite of viewable profile columns, photo paths, a distance bucket text (`under 5 km`, `5 to 15 km`, `15 to 50 km`, `over 50 km`), and the feed item id and decision. There is no attention-state or accountability field on the card.
+`feed_card` is a composite of viewable profile columns, photo paths, a distance bucket text (`under 5 km`, `5 to 15 km`, `15 to 50 km`, `over 50 km`), the feed item id and decision, `is_focus_pick boolean`, and `shared_factors text[]`, a short list of plain, factual strings such as "You're both looking for marriage," "Both want children," or "8 miles apart," generated from whichever non-negotiables both people share or whichever heritage rule was satisfied. There is no numeric score, attention-state, or accountability field on the card; section 1's "explain, don't score" principle is enforced at the return type, not just in the UI layer, since a function that never returns a number cannot be accidentally rendered as one.
 
-- Preconditions: caller `active`; `private.available(caller)`. Otherwise returns an empty set and a reason code via `feed_state()`.
-- If `feed_items` for today already exist, re-validate before returning: for every item with `decision = 'none'`, re-check `private.available(target_id)` (and, as a consistency measure, `private.mutually_compatible(caller, target_id)`, since a target's non-negotiables could also have changed since the morning). For any item that now fails, remove it from what is returned and attempt to backfill one replacement candidate using the same selection logic as fresh generation, inserting a new `feed_items` row for today, up to the original ceiling of 5. If no replacement is available, the caller simply sees fewer than 5 for that day. This closes the gap where a feed generated in the morning could still show a person who became focused later that day.
+- Preconditions: caller `active`; `private.available(caller)`. Otherwise returns an empty set and a reason code via `feed_state()`, which now additionally returns `caught_up` when the caller is available but zero fresh candidates exist for the day (section 2.7), distinct from `pending_review` or `at_capacity`.
+- If `feed_items` for today already exist, re-validate before returning: for every item with `decision = 'none'`, re-check `private.available(target_id)` and `private.mutually_compatible(caller, target_id)`, since a target's non-negotiables could also have changed since the morning. For any item that now fails, remove it from what is returned and attempt to backfill one replacement candidate using the same selection logic as fresh generation (step 2 below), inserting a new `feed_items` row for today, up to the original ceiling of 5. If no replacement is available, the caller simply sees fewer than 5 for that day, and `feed_state()` reports `caught_up` once none remain. This closes the gap where a feed generated in the morning could still show a person who became focused later that day.
 - Otherwise, inside one transaction:
   1. Lock the caller's `user_daily` row for today (`INSERT ... ON CONFLICT DO UPDATE ... RETURNING` with `FOR UPDATE`) so two concurrent calls cannot both generate.
-  2. Candidates: `active` profiles `p` where `private.available(p)` and `private.mutually_compatible(caller, p)`, excluding: self; anyone with a `likes` row from the caller in the last 30 days (any status); anyone the caller passed in `feed_items` in the last 90 days; anyone with any `connections` row with the caller; anyone in `blocks` either way.
-  3. Order by `private.preference_score(caller, p) DESC`, distance ASC, `random()`.
-  4. Take 5. Insert `feed_items` with positions. Set `feed_served`.
-- Invariants: at most 5 items per user per day; every item returned passes `mutually_compatible` and `available` at the moment it is returned, not merely at the moment it was first generated.
+  2. Candidates (Layer 1, hard eligibility): `active` profiles `p` where `private.available(p)` and `private.mutually_compatible(caller, p)`, excluding: self; anyone with a `likes` row from the caller in the last 30 days (any status); anyone the caller passed in `feed_items`, ever, unless surfaced again through the separate reconsideration path in section 2.7 (which writes its own `feed_items` rows outside this function, never mixed into the ordinary daily 5); anyone in `permanent_excludes` for the caller; anyone with any `connections` row with the caller; anyone in `blocks` either way.
+  3. Rank the candidate set (Layer 2, reciprocal ranking) by `private.reciprocal_score(caller, p) DESC`, distance ASC.
+  4. Take the top 4 by rank. For the fifth (Layer 3, exploration), draw one candidate at random, weighted toward but not limited to the next-highest-ranked remainder, deliberately excluding whichever heritage or lifestyle attributes dominate the top 4, so the daily set doesn't compound into an ever-narrower pattern. If fewer than 5 total candidates exist, all of them are shown and no exploration slot is manufactured.
+  5. Insert `feed_items` with positions; mark the single highest-`reciprocal_score` item across the full set (not only today's five) as `is_focus_pick`. Compute and store enough to reconstruct `shared_factors` per item. Set `feed_served`.
+- Invariants: at most 5 items per user per day; every item returned passes `mutually_compatible` and `available` at the moment it is returned; at most one item per day is marked `is_focus_pick`; no field on `feed_card` is ever a bare number presented as a score.
 - Errors: `not_active`, `at_capacity`.
 
 The waiting list has priority: the UI calls `next_waiting_like()` first and only shows discovery when it returns nothing.
@@ -830,7 +909,22 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 - Preconditions: caller is a member of an active connection; `expected_end_at > planned_at`; at most one open plan per connection at a time.
 - Effects: `create_date_plan` inserts the row and returns a short, pre-formatted share text naming the match's first name and verification status alongside the plan details, generated for the client to hand to the device's own share sheet; Focus never transmits it and never asks for or stores a third party's contact details. `get_date_plan` lets either member re-fetch the same summary later. `delete_date_plan` lets the creator cancel it early. The row is purged automatically 3 days after `expected_end_at` regardless (section 7.22).
 
-### 7.22 Scheduled jobs (pg_cron unless noted)
+### 7.22 `public.dont_show_again(target uuid) returns void`
+
+- Preconditions: caller and target are distinct; no active connection between them is required (this can be used on someone who was never a match at all, e.g., a coworker seen in a feed card).
+- Effects: insert `(caller, target)` into `permanent_excludes`. Immediately and permanently removes `target` from `caller`'s own future candidate generation (section 7.4, step 2). Does not affect `target`'s own feed, does not notify them, and is unrelated to `blocks`: it never ends an existing connection, and if one exists this function does nothing to it (use Block for that, section 7.12).
+
+### 7.23 `public.submit_feed_feedback(day date, reasons text[]) returns void`
+
+- Preconditions: `day` is today or yesterday in the caller's own `user_daily` history; `reasons` drawn only from the fixed set in section 5.2, at most 3 selected.
+- Effects: upsert the caller's `feed_feedback` row for that day. Entirely optional and never required to keep using discovery. Read only by admins for qualitative review, per section 1's commitment that v1 ranking is deterministic and does not adapt itself from this signal.
+
+### 7.24 `public.reconsider_passed_profiles() returns setof feed_card`
+
+- Preconditions: caller `active`, `available`, and `feed_state()` currently reports `caught_up` (section 2.7); this function is never called as part of the ordinary daily flow and never mixed into `get_daily_feed`'s own five.
+- Effects: selects, at most 5, previously-passed candidates where: the pass is at least 90 days old; the target's profile (`updated_at`, or a photo or prompt added after the pass) has changed since the pass was recorded; the pair is still `mutually_compatible` today; the target is not in `permanent_excludes` for the caller. Returns them as ordinary `feed_card` values (ranked the same way) but does not write `feed_items` rows for them until the caller acts on one, at which point a normal `decide_feed_item`-equivalent path applies. Presenting this list is always an explicit choice the caller makes from the caught-up screen; nothing here runs automatically or silently reintroduces anyone into the daily five.
+
+### 7.25 Scheduled jobs (pg_cron unless noted)
 
 | Job | Schedule | Effect |
 |---|---|---|
@@ -844,6 +938,16 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 | purge_date_plans | daily | delete `date_plans` rows more than 3 days past `expected_end_at` |
 | purge_deleted_accounts | daily, via Vercel Cron calling `/api/cron/purge` with a bearer secret | for each `deletion_requests` past `purge_after`: delete Storage objects across all buckets with the secret key, then call `private._purge_user(profile_id)` |
 | purge_verification_selfies | daily, same route | delete Storage objects for verifications decided more than 1 day ago and null `selfie_path` |
+
+### 7.26 `public.focus_now_on() returns void` / `public.focus_now_off() returns void`
+
+- Preconditions: caller `active`.
+- Effects: `focus_now_on` sets `profiles.focus_now = true`; `focus_now_off` sets it `false`. Both take effect immediately and are picked up everywhere `available()` is evaluated (section 7.1), with no other side effect: no connection is touched, no like is cleared, unlike the transition into Focused through capacity itself (section 7.7), because this is a voluntary pause on new introductions, not the product's own signal that a slot is genuinely full.
+
+### 7.27 `public.share_contact(connection_id uuid, method contact_method, value text, confirmed boolean) returns void`
+
+- Preconditions: caller is a member of an `active` connection; `confirmed = true` is required (the client only sets this after showing the warning in section 2.8; the function itself has no way to know the warning was read, so this is a deliberate, minimal check rather than a real enforcement of informed consent, which is ultimately a UX responsibility); `value` 1 to 200 characters.
+- Effects: insert an ordinary message (`is_system = false`, `sender_id = caller`) containing a formatted line naming the method and the value, so it is delivered, stored, and later purged under exactly the same rules as any other message in that connection (section 8.4), never duplicated elsewhere. Separately, insert a `contact_share_events` row recording only the method and who shared, never the value. Sharing is one-directional by construction: this function only ever grants the recipient the caller's information; the recipient's own information is unaffected and requires their own separate call to reciprocate, if they choose to.
 
 ---
 
@@ -953,7 +1057,8 @@ Enforced in the database unless stated, because the database cannot be bypassed.
 ### 9.5 Abuse controls
 
 - **Fake profiles:** human selfie review before visibility; at least two photos; a face required in the first (checked by the reviewer, not by software, in v1).
-- **Off-platform pushing and social handles:** a trigger scans prompts and messages for handle patterns, platform names, phone-number shapes, and payment app names. Prompts with hits set `review_flags.social_handle` and the profile is held for review. Messages with hits are delivered but flagged for the admin on any related report.
+- **Off-platform pushing and social handles on public profiles:** a trigger scans prompts for handle patterns, platform names, and payment app names, since a public profile is where follower-farming and validation-seeking actually happen (section 1's "nothing to collect"). A hit sets `review_flags.social_handle` and the profile is held for review before it becomes visible.
+- **Contact details typed casually into a private chat are a different situation, deliberately handled differently (section 2.8).** These are two connected adults, not a stranger farming followers, and Focus does not block or silently flag this by default; the same detection instead surfaces a one-time, dismissible friction line to the sender ("keep this private until you're comfortable"), never a refusal. The one exception is a pattern consistent with a known scam script (an unusually early push off-platform combined with other signals already covered under romance-scam patterns below), which is still surfaced to admins the same way any other reported concern is.
 - **Duplicate accounts:** one account per email; Google accounts are their own email. Nothing stronger in v1, by choice.
 - **Scraping:** 5 profiles a day, no list endpoints, no public photo URLs, human verification, CAPTCHA on sign-up.
 - **Harassment:** block is permanent and invisible to the blocked person; reports carry the exact message; ban keeps the email out.
@@ -1045,7 +1150,7 @@ Seed data for local development lives in `supabase/seed.sql` and never contains 
 - User A cannot insert into `feed_items`, `likes`, `connections`, `user_abuse_signals`, or `upload_tickets`.
 - User A cannot update `profiles.status`, `verified_at`, or `capacity` outside `set_capacity()`.
 - A non-admin cannot execute any `admin_*` function; an admin without an aal2 session cannot execute any `admin_*` function or select `admins`, `admin_audit`, or `user_abuse_signals`; the same admin, after completing TOTP enrollment and a challenge in the test harness, can.
-- **Every function this document designates `private` is called directly through the REST endpoint (`POST /rest/v1/rpc/available`, `.../mutually_compatible`, `.../preference_score`, `.../can_view_profile`, `.../is_admin`, `.../is_admin_mfa`, `.../normalize_key`) with a valid user JWT and confirmed to return a schema-not-found style error, not a permission error and not a result.** A permission error would suggest the schema is reachable but merely denied by a grant, which is exactly the fragile state this revision moved away from.
+- **Every function this document designates `private` is called directly through the REST endpoint (`POST /rest/v1/rpc/available`, `.../mutually_compatible`, `.../reciprocal_score`, `.../can_view_profile`, `.../is_admin`, `.../is_admin_mfa`, `.../normalize_key`) with a valid user JWT and confirmed to return a schema-not-found style error, not a permission error and not a result.** A permission error would suggest the schema is reachable but merely denied by a grant, which is exactly the fragile state this revision moved away from.
 - Storage policies: A can read B's photo only under `can_view_profile`; nobody but an aal2 admin can read `verification` objects; nobody but the secret key can read `incoming` objects.
 
 ### 11.2 Function and invariant tests (Vitest against the local stack, using real JWTs for several test users)
@@ -1168,6 +1273,16 @@ Sober review against section 1:
 | `paused` existed as an enum value since the first draft with no defined behavior, and an existing connection could leave the other person waiting indefinitely (third external input) | Pausing is self-service, removes a person from all new matching immediately, and never traps their existing connection partner, who gets an immediate one-tap way out (section 2.5) |
 | A 17-day automatic silence window contradicted the product's own premise of one present connection (third external input) | Shortened to a 10-day automatic backstop; manual ending has never had a waiting period in any version |
 | Building a real emergency-dispatch feature would be a liability and an operational promise this product cannot keep (third external input, explicit caution) | Date planning generates a share-sheet summary the user sends themselves, exactly as Bumble's Share Date works; Focus never stores a third party's contact details and never claims to monitor or dispatch help |
+| Ranking that only scores the viewer's preferences ignores whether the candidate would want to see the viewer back, unlike a genuine reciprocal recommender (fourth external input) | `reciprocal_score` is symmetric by construction, crediting both sides' preferences about each other |
+| An infinite-feeling feed that quietly recycles rejected profiles once a pool is exhausted trains people to mistake volume for possibility, the opposite of this product's premise (fourth external input) | Focus states plainly when a pool is exhausted and offers explicit, user-initiated choices instead of silently widening the funnel |
+| A compatibility percentage implies false precision about something inherently uncertain (fourth external input) | No score is ever shown; only a short, factual list of what two people share |
+| At capacity 2 or 3, an open slot by the numbers can still be unwanted right now, and forcing a capacity change to express that is a false choice (fifth external input) | `focus_now` is a separate, self-service toggle that closes the remaining slot without touching the capacity number itself |
+| A rematch feature would contradict how Hinge and Tinder both treat unmatching as permanent (fifth external input) | Confirmed as already true by construction: the candidate query excludes anyone with any connections row, ended or active, permanently; stated explicitly rather than left implicit |
+| Automatically revealing contact information, or making it a side effect of matching, ignores RAINN's guidance to withhold personal details until real trust exists, and Hinge's own warning about early off-platform pushes (fifth external input) | Contact sharing is a deliberate, one-directional, one-method-at-a-time action with an explicit warning; never automatic, never mutual by default |
+
+---
+
+## 4. System architecture
 
 ---
 
@@ -1196,15 +1311,15 @@ Each phase ends with the three review passes in section 12.
 
 ### Phase 2: Core loop (gated by Phase −1)
 
-- Migrations: `feed_items`, `likes`, `connections` (with `last_human_message_at`/`last_human_sender_id`, no `end_note`), `user_abuse_signals`, `blocks`; `private.available()`, `private.can_view_profile()`, `private.mutually_compatible()`, `private.preference_score()`, `public.get_daily_feed()`, `public.feed_state()`, `public.decide_feed_item()`, `private._send_like()`, `private._form_connection()` (including the clear-on-focus step), `public.next_waiting_like()`, `public.respond_to_like()`, `public.set_capacity()`, `public.block_user()`, `public.pause_account()`, `public.unpause_account()`, expire and purge jobs. `profiles.paused_at` is added here too, since pausing depends on the same status machinery as the rest of this phase.
+- Migrations: `feed_items`, `likes`, `connections` (with `last_human_message_at`/`last_human_sender_id`, no `end_note`), `user_abuse_signals`, `blocks`; `private.available()`, `private.can_view_profile()`, `private.mutually_compatible()`, `private.reciprocal_score()`, `public.get_daily_feed()`, `public.feed_state()`, `public.decide_feed_item()`, `private._send_like()`, `private._form_connection()` (including the clear-on-focus step), `public.next_waiting_like()`, `public.respond_to_like()`, `public.set_capacity()`, `public.block_user()`, `public.pause_account()`, `public.unpause_account()`, `public.focus_now_on()`, `public.focus_now_off()`, `public.dont_show_again()`, expire and purge jobs. `profiles.paused_at` and `profiles.focus_now` are added here too, since both depend on the same status and availability machinery as the rest of this phase. `permanent_excludes` is added here alongside `dont_show_again()`.
 - Screens: home (state machine over `feed_state()`), card, waiting list, connections list, capacity setting, and the paused-partner notice with its one-tap End Connection. No accountability or score display anywhere.
 - Exit: two test users can connect; the focused-exclusion, symmetric-race, stale-feed-backfill, and clean-slate concurrency tests all pass; a paused user's existing connection stays visible and messageable to their partner, who is never blocked from ending it immediately; RLS and schema-unreachability tests for `likes` and `user_abuse_signals` pass.
 
 ### Phase 3: Chat and ending
 
-- Migrations: `messages` (with `is_system`), triggers, Realtime publication, `end_connection()`, inactivity job with human-message attribution.
-- Screens: chat, end-connection sheet with note (delivered only as a message), faded state. No public accountability signal on cards.
-- Exit: Playwright smoke passes end to end, including the fade-attribution test and confirming no `end_note` persists anywhere but the message stream.
+- Migrations: `messages` (with `is_system`), `contact_share_events`, triggers, Realtime publication, `end_connection()`, `share_contact()`, inactivity job with human-message attribution.
+- Screens: chat, the Share Contact flow with its explicit warning, end-connection sheet with note (delivered only as a message), faded state. No public accountability signal on cards, and no visible connection-progression level or badge anywhere (section 2.8).
+- Exit: Playwright smoke passes end to end, including the fade-attribution test, a contact share landing only in the message stream with a matching metadata-only event row, and confirming no `end_note` persists anywhere but the message stream.
 
 ### Phase 4: Safety, privacy, launch readiness
 
@@ -1224,6 +1339,7 @@ Each phase ends with the three review passes in section 12.
 - A staging environment beyond ephemeral per-PR branches, if the team grows past one contributor.
 - Whether `style-src 'unsafe-inline'` in the CSP can be tightened once the Tailwind build output is audited in the red-team pass.
 - Whether a like cleared by the Focused transition should carry a distinct status value from one that naturally aged out at 30 days, for future internal analytics; currently both use `expired` and the distinction is not user-facing either way.
+- In-app voice and video calling, so two people can talk before ever exchanging a phone number, the way Bumble's in-app calling works. Explicitly out of v1 scope by the fifth external input's own recommendation, not by oversight; Share Contact (section 2.8) covers v1's needs on its own.
 
 ---
 
@@ -1245,6 +1361,11 @@ Each phase ends with the three review passes in section 12.
 - **Restricted**: an automatic, provisional state triggered by a high or critical severity report, pending human review; blocks new matching and new outgoing messages everywhere, but does not itself end existing connections. Always resolves to either active or banned; never left standing.
 - **Meeting check-in**: a private, one-sided record of whether either person wants to meet again after marking "We met," never visible to the other party, with a separate branch for feeling unsafe that leads to Block, Report, and emergency resources rather than ordinary breakup language.
 - **Date plan**: a plan (location, time, expected end) a user shares through their own phone's share sheet, not through Focus; Focus never stores a third party's contact details.
+- **Focus now**: a self-service toggle that closes a person's remaining capacity slot on their own terms, without changing their capacity number. Capacity is a ceiling; this is intent.
+- **Focus Pick**: the single highest reciprocal-scoring candidate in a day's five, labeled as such; the other four are simply that day's introductions. Never accompanied by a percentage.
+- **Reciprocal score**: an internal, symmetric measure of how much two people's own stated soft preferences point toward each other, used only for ordering and for generating a plain-language explanation; never shown to a user as a number.
+- **Not for me / Don't show again / Block**: three different, non-overlapping ways a person can stop seeing someone. Not for me is an ordinary pass, never recycled automatically but possibly reconsidered much later if the person's profile changes materially. Don't show again is permanent and one-directional, for someone already known outside the app. Block is the safety action in section 2.4 and ends any active connection.
+- **Share Contact**: the only way personal contact information moves between two people on Focus: deliberate, one method at a time, never mutual by default, with an explicit warning shown first.
 - **aal2**: the Supabase Auth assurance level reached after a second factor (TOTP) is verified in the current session; required for all admin data access and actions.
 - **private schema**: the Postgres schema holding every function a client must never call directly, kept off the project's exposed-schema list so the Data API cannot route to it regardless of grants.
 - **Upload ticket**: an application-level row bounding a direct-to-storage upload to 5 minutes, independent of the underlying Supabase signed URL's own fixed 2-hour validity.
