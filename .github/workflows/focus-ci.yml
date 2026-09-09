@@ -71,6 +71,24 @@ jobs:
           supabase start
           supabase test db
 
+      # Spec sections 11.3, 11.4 step 6: a Playwright smoke test against a
+      # real running build. Scoped to the Phase 1 half of the journey --
+      # sign up with OTP, complete onboarding, submit for review -- not
+      # admin approval, which needs a real aal2/TOTP session (see
+      # e2e/onboarding-smoke.spec.ts's own header comment). Needs the real
+      # local Supabase stack already started above, unlike the later
+      # Build/headers-check steps, which deliberately use canary values
+      # and never call a real backend at all.
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright smoke test
+        run: |
+          eval "$(supabase status -o env | sed -n 's/^API_URL=/NEXT_PUBLIC_SUPABASE_URL=/p;s/^PUBLISHABLE_KEY=/NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=/p;s/^SECRET_KEY=/SUPABASE_SECRET_KEY=/p')"
+          export NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY
+          export CRON_SECRET="ci-canary-cron-secret"
+          pnpm exec playwright test
+
       # `pnpm test --if-present` (flag after the script name) forwards
       # --if-present to the script itself once one exists, which vitest
       # then rejects as an unknown CLI option -- confirmed by reproducing
