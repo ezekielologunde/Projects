@@ -71,8 +71,15 @@ jobs:
           supabase start
           supabase test db
 
+      # `pnpm test --if-present` (flag after the script name) forwards
+      # --if-present to the script itself once one exists, which vitest
+      # then rejects as an unknown CLI option -- confirmed by reproducing
+      # this exact failure locally before fixing it. `pnpm --if-present
+      # run test` (flag before `run`) is the form pnpm actually consumes
+      # as its own, verified both with the script present (runs plainly,
+      # no stray arg reaching vitest) and absent (still a clean no-op).
       - name: Run application tests
-        run: pnpm test --if-present
+        run: pnpm --if-present run test
 
       - name: Build
         env:
