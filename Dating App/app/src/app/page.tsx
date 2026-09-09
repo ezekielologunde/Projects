@@ -1,15 +1,123 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+
 /**
- * Phase 0 placeholder. Real email-OTP and Google sign-in, Turnstile, and the
- * onboarding flow are built in Phase 1 (spec section 14). This page only proves
- * the app, the Supabase project, and proxy.ts are wired together correctly.
+ * Email OTP sign-in (spec section 9.1): a 6-digit code, no passwords
+ * anywhere in the system. Google sign-in and Turnstile are not wired up
+ * yet -- both need credentials from the Supabase dashboard that only the
+ * project owner can create (spec section 14, Phase -1/0 follow-ups).
  */
 export default function SignInPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [stage, setStage] = useState<"email" | "code">("email");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function requestCode(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOtp({ email });
+    setBusy(false);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    setStage("code");
+  }
+
+  async function verifyCode(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: "email",
+    });
+    setBusy(false);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    router.push("/onboarding");
+    router.refresh();
+  }
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-      <h1 className="text-2xl font-semibold">Focus</h1>
-      <p className="max-w-sm text-sm text-gray-500">
-        One person at a time, on purpose. Sign-in is not built yet.
-      </p>
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6">
+      <div className="w-full max-w-sm text-center">
+        <h1 className="text-2xl font-semibold">Focus</h1>
+        <p className="mt-2 text-sm text-gray-500">One person at a time, on purpose.</p>
+      </div>
+
+      {stage === "email" ? (
+        <form onSubmit={requestCode} className="flex w-full max-w-sm flex-col gap-3">
+          <label className="text-sm font-medium" htmlFor="email">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="rounded border border-gray-300 px-3 py-2"
+            placeholder="you@example.com"
+          />
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
+          >
+            {busy ? "Sending..." : "Send code"}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={verifyCode} className="flex w-full max-w-sm flex-col gap-3">
+          <p className="text-sm text-gray-500">
+            We sent a 6-digit code to {email}.
+          </p>
+          <label className="text-sm font-medium" htmlFor="code">
+            Code
+          </label>
+          <input
+            id="code"
+            type="text"
+            inputMode="numeric"
+            required
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            className="rounded border border-gray-300 px-3 py-2 tracking-widest"
+            placeholder="123456"
+          />
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
+          >
+            {busy ? "Verifying..." : "Verify and continue"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setStage("email")}
+            className="text-sm text-gray-500 underline"
+          >
+            Use a different email
+          </button>
+        </form>
+      )}
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </main>
   );
 }

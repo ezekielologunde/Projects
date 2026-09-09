@@ -242,6 +242,15 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
+# Spec section 9.1: sign-in is a 6-digit email code, not a magic link.
+# Supabase's default magic_link template only shows a clickable link; this
+# override shows the numeric {{ .Token }} instead, matching otp_length = 6
+# above. Production needs the equivalent change in the Supabase dashboard
+# under Auth > Email Templates > Magic Link.
+[auth.email.template.magic_link]
+subject = "Your Focus sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"
@@ -297,10 +306,15 @@ auth_token = "env(SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN)"
 # Control how many MFA factors can be enrolled at once per user.
 max_enrolled_factors = 10
 
-# Control MFA via App Authenticator (TOTP)
+# Control MFA via App Authenticator (TOTP). Required (spec section 9.1):
+# admin accounts must complete a second factor; a linked provider alone is
+# never treated as sufficient. Off by default in a fresh Supabase project,
+# found by the enrollment screen itself refusing to start, not assumed.
+# Production needs the equivalent toggle in the dashboard under
+# Authentication > Multi-Factor Authentication.
 [auth.mfa.totp]
-enroll_enabled = false
-verify_enabled = false
+enroll_enabled = true
+verify_enabled = true
 
 # Configure MFA via Phone Messaging
 [auth.mfa.phone]
