@@ -133,7 +133,7 @@ export async function processUploadedImage(ticketId: string) {
   // at the same position, with the secret key. Best-effort in the sense the
   // comment always meant: wrapped so a Storage error here can never turn an
   // otherwise-successful upload into a thrown exception. A failure here is
-  // cleaned up later by the purge_incoming cron job (spec section 7.19).
+  // cleaned up later by the purge_incoming cron job (spec section 7.25).
   try {
     await service.storage.from("incoming").remove([ticket.objectPath.replace(/^incoming\//, "")]);
     const oldPath = (result as { oldStoragePath?: string } | null)?.oldStoragePath;
@@ -280,7 +280,8 @@ export async function processUploadedVideoPrompt(ticketId: string, durationMs: n
 
   // Best-effort cleanup, same reasoning as processUploadedImage: never let
   // a Storage error here turn an otherwise-successful upload into a
-  // thrown exception. The purge_incoming cron job covers any leftovers.
+  // thrown exception. The purge_incoming cron job (spec section 7.25)
+  // covers any leftovers.
   try {
     await service.storage.from("video-incoming").remove([ticket.objectPath.replace(/^video-incoming\//, "")]);
     await service.storage.from("incoming").remove([ticket.posterObjectPath.replace(/^incoming\//, "")]);
