@@ -15,30 +15,45 @@ type Item = {
 export default function ReviewQueueClient({ items }: { items: Item[] }) {
   const supabase = createClient();
   const [decided, setDecided] = useState<Set<string>>(new Set());
+  const [pending, setPending] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
     (async () => {
-      for (const item of items) {
-        if (!item.selfie_path) continue;
-        const { data } = await supabase.storage
-          .from("verification")
-          .createSignedUrl(item.selfie_path.replace(/^verification\//, ""), 300);
-        if (data) setUrls((u) => ({ ...u, [item.id]: data.signedUrl }));
-      }
+      await Promise.all(
+        items.map(async (item) => {
+          if (!item.selfie_path) return;
+          const { data } = await supabase.storage
+            .from("verification")
+            .createSignedUrl(item.selfie_path.replace(/^verification\//, ""), 300);
+          if (data) setUrls((u) => ({ ...u, [item.id]: data.signedUrl }));
+        }),
+      );
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
   async function decide(id: string, decision: "approved" | "rejected") {
+    if (pending.has(id) || decided.has(id)) return;
     setError(null);
+    setPending((p) => new Set(p).add(id));
     const { error } = await supabase.rpc("admin_review_verification", {
       p_verification_id: id,
       p_decision: decision,
     });
+    setPending((p) => {
+      const next = new Set(p);
+      next.delete(id);
+      return next;
+    });
     if (error) {
-      setError(error.message);
+      setError(error.message.includes("already_decided") ? "Already reviewed." : error.message);
+      // Someone else's click (or a retry) already decided this one -- treat
+      // it as done rather than leaving it stuck in the queue.
+      if (error.message.includes("already_decided")) {
+        setDecided((d) => new Set(d).add(id));
+      }
       return;
     }
     setDecided((d) => new Set(d).add(id));
@@ -70,13 +85,15 @@ export default function ReviewQueueClient({ items }: { items: Item[] }) {
           <div className="mt-2 flex gap-2">
             <button
               onClick={() => decide(item.id, "approved")}
-              className="rounded bg-black px-3 py-2 text-white"
+              disabled={pending.has(item.id)}
+              className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
             >
               Approve
             </button>
             <button
               onClick={() => decide(item.id, "rejected")}
-              className="rounded border border-gray-300 px-3 py-2"
+              disabled={pending.has(item.id)}
+              className="rounded border border-gray-300 px-3 py-2 disabled:opacity-50"
             >
               Reject
             </button>

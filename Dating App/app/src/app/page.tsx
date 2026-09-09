@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 
 /**
  * Email OTP sign-in (spec section 9.1): a 6-digit code, no passwords
@@ -16,6 +17,7 @@ export default function SignInPage() {
   const [code, setCode] = useState("");
   const [stage, setStage] = useState<"email" | "code">("email");
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function requestCode(e: React.FormEvent) {
@@ -26,7 +28,7 @@ export default function SignInPage() {
     const { error } = await supabase.auth.signInWithOtp({ email });
     setBusy(false);
     if (error) {
-      setError(error.message);
+      setError(friendlyErrorMessage(error.message));
       return;
     }
     setStage("code");
@@ -44,11 +46,25 @@ export default function SignInPage() {
     });
     setBusy(false);
     if (error) {
-      setError(error.message);
+      setError(friendlyErrorMessage(error.message));
       return;
     }
     router.push("/onboarding");
     router.refresh();
+  }
+
+  async function resendCode() {
+    setError(null);
+    setInfo(null);
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOtp({ email });
+    setBusy(false);
+    if (error) {
+      setError(friendlyErrorMessage(error.message));
+      return;
+    }
+    setInfo("A new code is on its way.");
   }
 
   return (
@@ -107,16 +123,26 @@ export default function SignInPage() {
           >
             {busy ? "Verifying..." : "Verify and continue"}
           </button>
-          <button
-            type="button"
-            onClick={() => setStage("email")}
-            className="text-sm text-gray-500 underline"
-          >
-            Use a different email
-          </button>
+          <div className="flex justify-between text-sm">
+            <button type="button" onClick={resendCode} disabled={busy} className="text-gray-500 underline disabled:opacity-50">
+              Resend code
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setStage("email");
+                setError(null);
+                setInfo(null);
+              }}
+              className="text-gray-500 underline"
+            >
+              Use a different email
+            </button>
+          </div>
         </form>
       )}
 
+      {info && <p className="text-sm text-gray-500">{info}</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
     </main>
   );

@@ -40,9 +40,13 @@ export async function uploadImage(
     return { error: uploadError.message };
   }
 
-  const result = await processUploadedImage(ticketId);
-  if (result.error) {
-    return { error: result.error };
+  try {
+    const result = await processUploadedImage(ticketId);
+    if (result.error) {
+      return { error: result.error };
+    }
+    return {};
+  } catch {
+    return { error: "processing_failed" };
   }
-  return {};
 }

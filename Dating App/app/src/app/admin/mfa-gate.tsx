@@ -32,9 +32,18 @@ export default function AdminMfaGate() {
       if (existing) {
         setFactorId(existing.id);
         setMode("challenge");
-      } else {
-        setMode("enroll");
+        return;
       }
+
+      // Any unverified factor left over from an abandoned enrollment can't
+      // be resumed (its QR/secret isn't returned by listFactors), and
+      // leaving it around counts against max_enrolled_factors -- clean it
+      // up so repeated abandonment can never lock an admin out of
+      // enrolling at all.
+      await Promise.all(
+        data.totp.filter((f) => f.status !== "verified").map((f) => supabase.auth.mfa.unenroll({ factorId: f.id })),
+      );
+      setMode("enroll");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
