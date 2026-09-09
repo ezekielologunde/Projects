@@ -348,8 +348,8 @@ External
 **Photo or selfie upload.**
 1. Client calls server action `createUploadTicket(kind, position?, verificationId?)`. Server inserts an `upload_tickets` row (5-minute application expiry) and requests a Supabase Storage signed upload URL for `incoming/{userId}/{ticketId}` (a Supabase-fixed 2-hour window, unrelated to and longer than the ticket's own expiry). Returns the URL and the ticket id.
 2. Client uploads the raw file bytes directly to Supabase Storage using that URL. This never touches a Vercel function body, so Vercel's 4.5 MB function payload limit does not apply; the `incoming` bucket itself enforces a 15 MB ceiling and an image-only MIME allowlist as a first filter.
-3. Client calls server action `processUpload(ticketId)`, passing nothing else. Server, using the secret key: loads the ticket, requiring `ticket.user_id = auth.uid()`, `ticket.used_at IS NULL`, and `ticket.expires_at > now()` under the user's own JWT for that check (the actual byte-moving happens with the secret key afterward); downloads the object at the path recorded on the ticket, never a client-supplied path; sniffs real file type from bytes (rejects non-images regardless of extension or declared MIME); decodes with `sharp` behind a maximum-decoded-pixel-count guard; strips all metadata including GPS; resizes to a maximum of 1600 px (1200 px for selfies) on the long edge; re-encodes as WebP; writes to a server-generated canonical path (`photos/{userId}/{newPhotoId}.webp` or `verification/{userId}/{ticket.verification_id}.webp`); inserts or updates the corresponding row; marks the ticket `used_at = now()`; deletes the `incoming` object immediately.
-4. A cron job purges anything left in `incoming` older than one hour, as a safety net for a client that uploads but never calls step 3, and a separate daily job removes used or long-expired ticket rows.
+3. Client calls server action `processUpload(ticketId)`, passing nothing else. The route first calls the `public` RPC `begin_upload(ticketId)` under the user's own JWT, which claims the ticket and returns its `kind`, `object_path`, `position`, and `verification_id`, the only way the route learns any of this, never from a client-supplied path (section 7.28). The route then, using the secret key: downloads the object at that path; sniffs real file type from bytes (rejects non-images regardless of extension or declared MIME); decodes with `sharp` behind a maximum-decoded-pixel-count guard; strips all metadata including GPS; resizes to a maximum of 1600 px (1200 px for selfies) on the long edge; re-encodes as WebP; writes to a server-generated canonical path (`photos/{userId}/{newPhotoId}.webp` or `verification/{userId}/{ticket.verification_id}.webp`); deletes the `incoming` object. Finally the route calls the `public` RPC `process_upload(ticketId, width, height)` under the user's own JWT again, which inserts or updates the `photos` or `verifications` row and marks the ticket `used_at = now()` (section 7.17). If any step before that last call fails, the ticket is simply left claimed-but-unused and expires; nothing is left half-written.
+4. A cron job purges anything left in `incoming` older than one hour, as a safety net for a client that uploads but never completes step 3, and a separate daily job removes used or long-expired ticket rows.
 
 The original bytes are held only in the private `incoming` bucket for the seconds between upload and processing, then deleted.
 
@@ -492,7 +492,8 @@ id, profile_id, pose_code (text), selfie_path (text, nullable after decision), s
 | position | smallint | nullable, 1..6, only for `kind = 'photo'` |
 | verification_id | uuid FK | nullable, only for `kind = 'selfie'`, must belong to `user_id` and be undecided |
 | created_at, expires_at | timestamptz | `expires_at = created_at + 5 minutes`, independent of the underlying Supabase URL's own 2-hour validity |
-| used_at | timestamptz | nullable |
+| claimed_at | timestamptz | nullable; set by `begin_upload()` (section 7.28) the moment the processing route starts, before any Storage or Sharp work; distinct from `used_at` so "claimed, in progress" and "fully processed" are never conflated |
+| used_at | timestamptz | nullable; set by `process_upload()` (section 7.17) only after the processed image is written and the `photos`/`verifications` row exists |
 
 Index `(user_id, used_at)`; purged daily once used or more than 24 hours past `expires_at`.
 
@@ -737,7 +738,7 @@ pause_account, unpause_account, record_meeting_checkin,
 dont_show_again, submit_feed_feedback, reconsider_passed_profiles,
 focus_now_on, focus_now_off, share_contact,
 create_date_plan, get_date_plan, delete_date_plan,
-create_upload_ticket, process_upload, record_consent, am_i_admin,
+create_upload_ticket, begin_upload, process_upload, record_consent, am_i_admin,
 admin_review_verification, admin_review_report, admin_ban_user, admin_reinstate_user
 ```
 
@@ -765,9 +766,24 @@ Each function lists its schema, preconditions, effects, invariants, concurrency 
 
 ### 7.1 `private.available(p uuid) returns boolean` (STABLE)
 
-`(select count(*) from public.connections where status = 'active' and (user_a = p or user_b = p)) < (select capacity from public.profiles where id = p)`.
+True when all of the following hold, matching the formula in section 2.2 exactly (an earlier draft defined this function as capacity math alone and never updated it after `focus_now` was added in section 0.5, which would have silently made that toggle a no-op; caught and fixed here before implementation):
 
-This single function is checked, symmetrically, everywhere it matters: building candidate pools (7.4), re-reading an already-generated feed (7.4), before sending a like on both sides (7.5, 7.6), before forming a connection on both sides (7.7), and before surfacing or accepting a waiting like on both sides (7.8, 7.9). A focused profile fails this check everywhere, so no new like can reach them and they never appear as a fresh or stale candidate to anyone.
+```sql
+select
+  pr.status = 'active'
+  and pr.paused_at is null
+  and pr.focus_now = false
+  and (
+    select count(*) from public.connections c
+    where c.status = 'active' and (c.user_a = p or c.user_b = p)
+  ) < pr.capacity
+from public.profiles pr
+where pr.id = p
+```
+
+`restricted` and `banned` both fail the `status = 'active'` check here too, which is correct: neither should ever be a fresh candidate or receive a new like, on top of the messaging block that `restricted` gets separately (section 5.2, `messages` trigger).
+
+This single function is checked, symmetrically, everywhere it matters: building candidate pools (7.4), re-reading an already-generated feed (7.4), before sending a like on both sides (7.5, 7.6), before forming a connection on both sides (7.7), and before surfacing or accepting a waiting like on both sides (7.8, 7.9). A focused, paused, restricted, or focus_now profile fails this check everywhere, so no new like can reach them and they never appear as a fresh or stale candidate to anyone.
 
 ### 7.2 `private.mutually_compatible(a uuid, b uuid) returns boolean` (STABLE)
 
@@ -882,11 +898,13 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 - Preconditions: for `kind = 'photo'`, `position` between 1 and 6; for `kind = 'selfie'`, `verification_id` must reference a row owned by the caller with `decision IS NULL`. Rate-limited alongside the existing photo and verification daily caps (section 9.4).
 - Effects: insert an `upload_tickets` row with a server-generated `object_path` under `incoming/{caller}/{ticketId}` and `expires_at = now() + 5 minutes`; request a Supabase signed upload URL for that path (which will itself be valid 2 hours, a vendor-fixed value this function does not control and does not rely on for its own security guarantee). Return `{ ticketId, uploadUrl }`.
 
-### 7.17 `public.process_upload(ticket_id uuid) returns jsonb`
+### 7.17 `public.process_upload(ticket_id uuid, width smallint, height smallint) returns jsonb`
 
-- Preconditions: ticket exists, `user_id = auth.uid()`, `used_at IS NULL`, `expires_at > now()`. This is the only input the client provides; the object path, kind, position, and any linked verification are all read from the ticket row, never accepted as separate client-supplied parameters, closing the IDOR surface an earlier draft left open by accepting an arbitrary `objectPath`.
-- Effects: (performed by the calling route using the secret key for the storage operations, but gated by this function's row lock and check under the user's own JWT) download the object at `ticket.object_path`; sniff real file type; decode behind a maximum-pixel-count guard; strip metadata; resize; re-encode as WebP; write to the canonical destination path derived from `ticket.kind`, `caller`, and either a newly generated photo id or `ticket.verification_id`; upsert the corresponding `photos` or `verifications` row; set `used_at = now()`; delete the `incoming` object.
-- Errors: `ticket_not_found`, `ticket_expired`, `ticket_used`, `not_an_image`, `image_too_large`.
+Split into two functions from a single `process_upload` in earlier drafts, which described one function doing both a JWT-gated row check and secret-key Storage work in the same breath, an impossible combination for a single Postgres function to actually perform (Sharp-based image decoding runs in Node.js, not Postgres, and `upload_tickets` grants nothing directly selectable, so the calling route cannot even read `object_path` without a function to hand it over first). The two are `begin_upload` (section 7.28), called before any Storage work, and this function, called after.
+
+- Preconditions: ticket exists, `user_id = auth.uid()`, `claimed_at IS NOT NULL` (via `begin_upload`), `used_at IS NULL`.
+- Effects: insert the `photos` row (server-generated id, `storage_path = photos/{caller}/{id}.webp`, the given `width`/`height`) if `ticket.kind = 'photo'`, at `ticket.position`; or set `verifications.selfie_path` for `ticket.verification_id` if `ticket.kind = 'selfie'`. Set `used_at = now()`. This function only records that a correctly processed image already exists at the expected path; it never touches Storage itself. The calling route is responsible for having already downloaded, validated, decoded, stripped, resized, re-encoded, and written the object with the secret key, and for deleting the `incoming` original, before calling this function; if any of that fails, this function is never called and the ticket simply expires unused (section 7.19's `purge_incoming` and `purge_upload_tickets` clean up the orphaned original).
+- Errors: `ticket_not_found`, `not_claimed`, `ticket_used`.
 
 ### 7.18 `public.record_consent(kind consent_kind, version text, action consent_action) returns void`
 
@@ -948,6 +966,14 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 
 - Preconditions: caller is a member of an `active` connection; `confirmed = true` is required (the client only sets this after showing the warning in section 2.8; the function itself has no way to know the warning was read, so this is a deliberate, minimal check rather than a real enforcement of informed consent, which is ultimately a UX responsibility); `value` 1 to 200 characters.
 - Effects: insert an ordinary message (`is_system = false`, `sender_id = caller`) containing a formatted line naming the method and the value, so it is delivered, stored, and later purged under exactly the same rules as any other message in that connection (section 8.4), never duplicated elsewhere. Separately, insert a `contact_share_events` row recording only the method and who shared, never the value. Sharing is one-directional by construction: this function only ever grants the recipient the caller's information; the recipient's own information is unaffected and requires their own separate call to reciprocate, if they choose to.
+
+### 7.28 `public.begin_upload(ticket_id uuid) returns jsonb`
+
+Called by the processing route immediately before any Storage or Sharp work, using the caller's own JWT, not the secret key; this is the check section 4.3 already described as happening "under the user's own JWT" before "the actual byte-moving happens with the secret key."
+
+- Preconditions: ticket exists, `user_id = auth.uid()`, `claimed_at IS NULL`, `used_at IS NULL`, `expires_at > now()`.
+- Effects: set `claimed_at = now()` (an atomic `UPDATE ... WHERE claimed_at IS NULL RETURNING ...`, so two concurrent calls for the same ticket cannot both proceed). Return `{ kind, object_path, position, verification_id }` read from the ticket row; this is the only way the route learns which object to fetch, closing the IDOR surface an earlier draft left open by accepting an arbitrary client-supplied `objectPath` instead of deriving it from a ticket the caller does not control the contents of.
+- Errors: `ticket_not_found`, `ticket_expired`, `already_claimed`, `ticket_used`.
 
 ---
 
@@ -1174,7 +1200,7 @@ Seed data for local development lives in `supabase/seed.sql` and never contains 
 - Meeting check-in privacy: user A's `meeting_checkins` row for a shared connection is never selectable by user B under any RLS condition, including an active connection between them.
 - Date plan: `date_plans` created by A is readable by B (the connection partner) but contains no contact-detail column at all; the row is gone from a direct select after the purge job runs 3 days past `expected_end_at`.
 - Deletion: after `request_account_deletion()` plus the purge job, no rows remain for the user except retained reports and audit, and Storage is empty for that folder across all three buckets.
-- Upload ticket pipeline: `process_upload` rejects a ticket belonging to another user, an already-used ticket, and an expired ticket (at 5 minutes, well before the underlying Supabase URL's own 2-hour window closes), even though the Storage object itself would still be fetchable by the secret key; a file uploaded via the signed URL larger than the `incoming` bucket ceiling is rejected before it reaches the processing route; a non-image file with an image extension is rejected by byte-sniffing; a successfully processed image leaves no object behind in `incoming`.
+- Upload ticket pipeline: `begin_upload` rejects a ticket belonging to another user, an already-claimed ticket, an already-used ticket, and an expired ticket (at 5 minutes, well before the underlying Supabase URL's own 2-hour window closes), even though the Storage object itself would still be fetchable by the secret key; two concurrent `begin_upload` calls for the same ticket produce exactly one success; `process_upload` rejects a ticket that was never claimed via `begin_upload`; a file uploaded via the signed URL larger than the `incoming` bucket ceiling is rejected before it reaches the processing route; a non-image file with an image extension is rejected by byte-sniffing; a successfully processed image leaves no object behind in `incoming`.
 - Consent: a user can record a `sensitive_data` `accepted` event at version 1, then later a second `accepted` event at version 2, without any conflict; the derived current state reflects version 2; a `withdrawn` event is recorded without deleting the prior `accepted` event.
 
 ### 11.3 Application tests
@@ -1218,7 +1244,7 @@ Adversarial, performed against the running local stack with raw HTTP calls and S
 - Hit `get_daily_feed()` and `respond_to_like()` in parallel from many sessions; assert capacity, caps, and the available/focused candidate exclusion all hold, including the specific caller-side race from section 11.2.
 - Read back an already-generated feed after artificially forming a connection for one of its targets in a separate session; confirm the target disappears on the next read.
 - Force a user into Focused with several pending likes outstanding and confirm they are all cleared, not merely hidden.
-- Attempt `process_upload` with a fabricated or another user's ticket id, and with a raw object path where a ticket id is expected.
+- Attempt `begin_upload` and `process_upload` with a fabricated or another user's ticket id, and with a raw object path where a ticket id is expected; attempt `process_upload` on a ticket never passed through `begin_upload`.
 - Fetch Storage objects by guessed path in all three buckets with a valid JWT.
 - Subscribe to Realtime on a connection you are not in.
 - Submit prompts and messages containing script tags, long unicode, right-to-left overrides, and social handles; verify rendering and flagging.
@@ -1282,10 +1308,6 @@ Sober review against section 1:
 
 ---
 
-## 4. System architecture
-
----
-
 ## 14. Phased delivery
 
 Each phase ends with the three review passes in section 12.
@@ -1305,7 +1327,7 @@ Each phase ends with the three review passes in section 12.
 
 ### Phase 1: Foundation
 
-- Migrations (all expand): enums, `profiles`, `profile_sensitive`, `profile_private`, `profile_answers`, `profile_heritage`, `preferences`, `heritage_preferences`, `photos`, `verifications`, `upload_tickets`, `consent_events`, `admins`, `admin_audit`, `user_daily`. RLS for all. `private.is_admin()`, `private.is_admin_mfa()`, `private.normalize_key()`, `public.am_i_admin()`, `public.create_upload_ticket()`, `public.process_upload()`, `public.record_consent()`, triggers for lengths and counts.
+- Migrations (all expand): enums, `profiles`, `profile_sensitive`, `profile_private`, `profile_answers`, `profile_heritage`, `preferences`, `heritage_preferences`, `photos`, `verifications`, `upload_tickets`, `consent_events`, `admins`, `admin_audit`, `user_daily`. RLS for all. `private.is_admin()`, `private.is_admin_mfa()`, `private.normalize_key()`, `public.am_i_admin()`, `public.create_upload_ticket()`, `public.begin_upload()`, `public.process_upload()`, `public.record_consent()`, triggers for lengths and counts.
 - Auth flows including admin TOTP enrollment, onboarding screens (with the two-tier append-only consent from section 8.1), the ticket-and-process upload pipeline, selfie capture, admin verification queue behind `is_admin_mfa`.
 - Exit: a new user can complete onboarding and be approved by an aal2-enrolled admin; pgTAP covers every policy in this phase, including the `profile_sensitive` split, the admin MFA gate, and the private-schema unreachability test for every helper introduced so far.
 
