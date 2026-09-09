@@ -19,7 +19,15 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 (full history, all branches) is required by the
+      # contract-migration guard near the end of this job, which diffs
+      # against origin/main -- actions/checkout's default (fetch-depth: 1)
+      # only fetches the triggering ref, so origin/main would not exist
+      # locally and that step would fail on every PR. Never actually
+      # reached until Typecheck below was fixed, so never caught before.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:
@@ -37,6 +45,18 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Next.js 16 generates route/layout/page prop types (e.g. LayoutProps)
+      # into .next/types on demand -- normally the first side effect of
+      # `next dev` or `next build`, both of which had already run at least
+      # once on every machine this was typechecked on locally, masking that
+      # a genuinely clean checkout has no such types yet. `next typegen` is
+      # the lightweight, build-free way to generate just that, confirmed
+      # against a from-scratch `rm -rf .next` locally before adding this
+      # step: every prior CI run failed at Typecheck on exactly this,
+      # invisibly, because it was never checked until now.
+      - name: Generate Next.js route types
+        run: pnpm exec next typegen
+
       - name: Typecheck
         run: pnpm exec tsc --noEmit
 
@@ -45,9 +65,7 @@ jobs:
           version: 2.117.0
 
       # Spec section 11.1: pgTAP tests, including that every function this document
-      # designates `private` is unreachable through the Data API. Currently zero
-      # migrations exist (Phase 0), so this step passing with no tests is the
-      # expected, correct result until Phase 1 adds the first schema.
+      # designates `private` is unreachable through the Data API.
       - name: Start local Supabase stack and run database tests
         run: |
           supabase start
@@ -82,8 +100,58 @@ jobs:
             exit 1
           fi
 
+      # Spec section 11.3: "a test fetches / and asserts every header in
+      # section 9.3, including a fresh nonce on each request." Runs against
+      # the build's own output (next start), not a separate tool, since a
+      # plain curl loop is enough for a header-presence check and this
+      # project has no Playwright/Vitest harness yet to hang a heavier test
+      # on. The Turnstile-script-tag half of 11.3's same bullet is skipped
+      # on purpose: Turnstile itself isn't wired into any page yet (section
+      # 0.6's own deferred-items list), so there is no script tag to assert
+      # a nonce on until that manual setup step happens.
+      - name: Verify security headers on a running build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://ci-canary.supabase.co"
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ci-canary-not-a-real-key"
+          SUPABASE_SECRET_KEY: "sb_secret_ci-canary-should-never-appear-in-client-bundle"
+          CRON_SECRET: "ci-canary-cron-secret"
+        run: |
+          pnpm start &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID" EXIT
+
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://localhost:3000/; then break; fi
+            sleep 1
+          done
+
+          headers_1=$(curl -sI http://localhost:3000/)
+          headers_2=$(curl -sI http://localhost:3000/)
+
+          for header in "content-security-policy" "strict-transport-security" "x-content-type-options" "referrer-policy" "x-frame-options" "permissions-policy"; do
+            if ! echo "$headers_1" | grep -qi "^$header:"; then
+              echo "::error::missing $header on / (spec section 9.3)"
+              exit 1
+            fi
+          done
+
+          nonce_1=$(echo "$headers_1" | grep -oi "nonce-[A-Za-z0-9+/=]*" | head -1)
+          nonce_2=$(echo "$headers_2" | grep -oi "nonce-[A-Za-z0-9+/=]*" | head -1)
+          if [ -z "$nonce_1" ]; then
+            echo "::error::no CSP nonce found on /"
+            exit 1
+          fi
+          if [ "$nonce_1" = "$nonce_2" ]; then
+            echo "::error::CSP nonce did not change between two requests (spec section 9.3: a fresh nonce on each request)"
+            exit 1
+          fi
+
+      # Spec section 9.8: "pnpm audit --prod in CI, failing on high or critical."
+      # Non-blocking (|| true) until Phase 1 shipped; Phase 1 is now live on the
+      # remote Supabase project, so the deferral this comment used to cite no
+      # longer applies -- tightened to actually fail the build.
       - name: Audit production dependencies
-        run: pnpm audit --prod || true # advisory until the first release; tighten in Phase 4
+        run: pnpm audit --prod --audit-level high
 
       # Spec section 10.2: an expand migration may run automatically; a contract
       # migration never does, and never lands in the same PR as application code.
