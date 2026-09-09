@@ -77,7 +77,9 @@ mutual must-haves -> currently available -> never previously connected or "don't
   -> reciprocal ranking -> up to 5/day, one at a time -> Interested / Not for me
 ```
 
-The single highest-ranked introduction of the day is labeled **Strong Introduction** and shown with a short, factual line naming what the two people share — "You both want marriage. Both want children. Faith practice aligns. 11 miles apart." — never a percentage, never a claim of compatibility beyond what that sentence itself says. One of the five is deliberately drawn from outside the top-ranked set so the feed can't quietly narrow itself around whoever was liked before.
+The single highest-ranked introduction of the day is labeled **Focus Pick** and shown with a short, factual line naming what the two people share — "You both want marriage. Both want children. Faith practice aligns. 11 miles apart." — never a percentage, never a claim of compatibility beyond what that sentence itself says. One of the five is deliberately drawn from outside the top-ranked set so the feed can't quietly narrow itself around whoever was liked before.
+
+Interested carries an optional note tied to something specific on the profile — a prompt answer, a photo — up to 200 characters (rule 4's "no hidden backup queue" still applies: the note is as invisible as the like itself unless it becomes mutual). If it does, the note is what the new connection's chat opens with, not a blank thread.
 
 ## 5. Pool exhaustion
 
@@ -153,7 +155,7 @@ Thirty screens, matched one-to-one with the clickable prototype (`Dating App/doc
 |---|---|---|
 | 01 | Welcome | The premise, in one sentence, before any mechanic |
 | 02 | Sign in | Email code, no password |
-| 03 | Basic profile | Name, city, a prompt — not the full form |
+| 03 | Basic profile | Name, city, a prompt — not the full form. Real onboarding requires one prompt from each of three categories (section 0.12) plus an optional video; the prototype shows one representative field |
 | 04 | Relationship intent | Goal, non-negotiables entry point |
 | 05 | Capacity selection | Rule 1 |
 | 06 | Must-haves | Rule 9's setting exists and is legible |
@@ -164,7 +166,7 @@ Thirty screens, matched one-to-one with the clickable prototype (`Dating App/doc
 | 11 | Home / Available | What AVAILABLE actually looks like |
 | 12 | Introduction | Section 4, one profile, two buttons |
 | 13 | Full profile | Non-negotiables shown above photos |
-| 14 | Interested | Silent — no confirmation the other side sees |
+| 14 | Interested | Silent — no confirmation the other side sees. Optional note tied to a specific prompt (section 0.12), held privately with the like |
 | 15 | Connection formed | Section 3's mutual moment |
 | 16 | Connections | The Connection screen list |
 | 17 | Focused | Rule 3, made visible |

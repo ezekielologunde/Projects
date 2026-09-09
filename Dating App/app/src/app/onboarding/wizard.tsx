@@ -53,10 +53,34 @@ const HERITAGE_FIELDS: { key: Enums<"heritage_field">; label: string }[] = [
   { key: "raised_in", label: "Raised in" },
 ];
 
-const PROMPTS: { id: string; text: string }[] = [
-  { id: "looking_for", text: "Right now, I'm looking for..." },
-  { id: "weekend", text: "A weekend well spent looks like..." },
-  { id: "known_for", text: "People who know me would say I'm..." },
+// One required prompt from each category (spec section 0.12): a generic
+// personality prompt alone never asks the thing that actually matters for
+// serious dating -- "how I relationship" does.
+const PROMPT_CATEGORIES: { category: string; options: { id: string; text: string }[] }[] = [
+  {
+    category: "Who I am",
+    options: [
+      { id: "sunday", text: "A normal Sunday for me looks like..." },
+      { id: "proud_of", text: "Something I'm proud of that isn't on my résumé..." },
+      { id: "friends_say", text: "My friends would probably describe me as..." },
+    ],
+  },
+  {
+    category: "How I relationship",
+    options: [
+      { id: "conflict", text: "When there's conflict, I usually..." },
+      { id: "cared_for", text: "I feel most cared for when..." },
+      { id: "learned", text: "Something I learned from my last relationship..." },
+    ],
+  },
+  {
+    category: "Where I'm going",
+    options: [
+      { id: "five_years", text: "In five years, I hope life looks like..." },
+      { id: "family", text: "The kind of family I'm hoping to build..." },
+      { id: "understand", text: "One thing I want my future partner to understand about me..." },
+    ],
+  },
 ];
 
 type WizardData = {
@@ -511,10 +535,18 @@ function PromptsStep({
   onBack: () => void;
   initial: { prompt_id: string; answer: string }[] | null;
 }) {
-  const [answers, setAnswers] = useState<string[]>(() => {
-    const byId = new Map((initial ?? []).map((p) => [p.prompt_id, p.answer]));
-    return PROMPTS.map((p) => byId.get(p.id) ?? "");
+  // Hydration matches a saved prompt_id against every category's own option
+  // list, not just its position, so a saved answer survives even if the
+  // curated prompt set changes later; an id from an older prompt set that
+  // no longer exists anywhere just falls back to that category's default.
+  const initialByCategory = PROMPT_CATEGORIES.map((cat) => {
+    const saved = (initial ?? []).find((p) => cat.options.some((o) => o.id === p.prompt_id));
+    return {
+      promptId: saved?.prompt_id ?? cat.options[0].id,
+      answer: saved?.answer ?? "",
+    };
   });
+  const [choices, setChoices] = useState<{ promptId: string; answer: string }[]>(initialByCategory);
 
   return (
     <form
@@ -523,7 +555,7 @@ function PromptsStep({
         e.preventDefault();
         const ok = await run(async () => {
           const uid = (await supabase.auth.getUser()).data.user!.id;
-          const prompts = PROMPTS.map((p, i) => ({ prompt_id: p.id, answer: answers[i].trim() }));
+          const prompts = choices.map((c) => ({ prompt_id: c.promptId, answer: c.answer.trim() }));
           const { error } = await supabase.from("profiles").update({ prompts }).eq("id", uid);
           return { error };
         });
@@ -531,18 +563,34 @@ function PromptsStep({
       }}
     >
       <h2 className="text-lg font-medium">A few prompts</h2>
-      <p className="text-sm text-gray-500">Three short answers instead of a free-form bio.</p>
-      {PROMPTS.map((p, i) => (
-        <Field key={p.id} label={p.text}>
+      <p className="text-sm text-gray-500">One from each, instead of a free-form bio.</p>
+      {PROMPT_CATEGORIES.map((cat, i) => (
+        <div key={cat.category} className="flex flex-col gap-2 rounded border border-gray-200 p-3">
+          <span className="text-xs font-medium uppercase tracking-wide text-gray-400">{cat.category}</span>
+          <select
+            value={choices[i].promptId}
+            onChange={(e) =>
+              setChoices((cs) => cs.map((c, j) => (j === i ? { ...c, promptId: e.target.value } : c)))
+            }
+            className="rounded border border-gray-300 px-3 py-2 text-sm"
+          >
+            {cat.options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.text}
+              </option>
+            ))}
+          </select>
           <input
             required
             minLength={1}
             maxLength={200}
-            value={answers[i]}
-            onChange={(e) => setAnswers((a) => a.map((v, j) => (j === i ? e.target.value : v)))}
+            value={choices[i].answer}
+            onChange={(e) =>
+              setChoices((cs) => cs.map((c, j) => (j === i ? { ...c, answer: e.target.value } : c)))
+            }
             className="rounded border border-gray-300 px-3 py-2"
           />
-        </Field>
+        </div>
       ))}
       <StepButtons onBack={onBack} />
     </form>
