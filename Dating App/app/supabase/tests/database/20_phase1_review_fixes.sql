@@ -4,7 +4,7 @@
 -- auth.users rows so on_auth_user_created runs for real, and
 -- private.test_login() to simulate PostgREST's per-request role/JWT.
 begin;
-select plan(23);
+select plan(31);
 
 insert into auth.users (id, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, aud, role)
 values
@@ -256,6 +256,129 @@ select throws_like(
   format('select public.admin_review_verification(%L::uuid, ''rejected''::public.verification_decision, null)', :'verification_id'),
   '%already_decided%',
   'a second decision on the same verification is refused instead of silently overwriting the first'
+);
+
+-- ===== fix 10 (continued): the actual profile-status transition, not
+-- just the verifications-row idempotency guard above. Bob's approve call
+-- a few lines up never touches his profile's status at all -- the
+-- admin_review_verification UPDATE only fires `where status =
+-- 'pending_review'`, and bob's profile was never moved there (nothing in
+-- this file calls submit_for_review() for him). That silent no-op was
+-- never asserted either way before this addition: grepping this whole
+-- suite for verified_at, 'active', or admin_audit returned zero
+-- assertion hits. Confirmed by reading admin_review_verification's
+-- current body directly (20260909020000_phase1_review_fixes.sql) before
+-- writing any of the below, not assumed from the spec or the RPC's name. =====
+
+-- The session is still running as the admin's 'authenticated' role from
+-- the already_decided check above, which has no INSERT grant on
+-- auth.users -- step back up to postgres first, same role this file's
+-- very first fixture insert ran as before any test_login() call existed.
+select set_config('role', 'postgres', true);
+
+insert into auth.users (id, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, aud, role)
+values
+  ('44444444-4444-4444-4444-444444444444', 'carol@test.local', 'x', now(), '{}', '{}', 'authenticated', 'authenticated'),
+  ('55555555-5555-5555-5555-555555555555', 'dave@test.local', 'x', now(), '{}', '{}', 'authenticated', 'authenticated');
+
+select private.test_login('44444444-4444-4444-4444-444444444444');
+select public.start_verification() as carol_pose \gset
+select (:'carol_pose'::jsonb->>'verificationId')::uuid as carol_verification_id \gset
+
+select private.test_login('55555555-5555-5555-5555-555555555555');
+select public.start_verification() as dave_pose \gset
+select (:'dave_pose'::jsonb->>'verificationId')::uuid as dave_verification_id \gset
+
+-- Same fixture shortcut this file already uses for storage.objects above:
+-- step up to postgres and flip the same GUC admin_review_verification
+-- itself sets around its own profiles UPDATE. profiles_enforce_immutable
+-- guards `status` against direct writes regardless of role, so getting
+-- these two into pending_review for the test needs the identical bypass
+-- the RPC uses internally, confirmed against that trigger's own body
+-- (20260909010200_phase1_profiles.sql) rather than guessed.
+--
+-- profiles_require_photo_for_review is a separate, unconditional trigger
+-- on the same table ("the hard backstop regardless of call path" per its
+-- own comment in 20260909010300_phase1_photos_verifications_uploads.sql)
+-- with no bypass GUC at all, discovered only because the first attempt at
+-- this fixture failed against it with missing_photo -- so a real photos
+-- row at position 1 is required here too, not just the status bypass.
+select set_config('role', 'postgres', true);
+insert into public.photos (profile_id, position, storage_path)
+values
+  ('44444444-4444-4444-4444-444444444444', 1, 'photos/44444444-4444-4444-4444-444444444444/' || gen_random_uuid() || '.webp'),
+  ('55555555-5555-5555-5555-555555555555', 1, 'photos/55555555-5555-5555-5555-555555555555/' || gen_random_uuid() || '.webp');
+
+select set_config('app.bypass_profile_guard', 'on', true);
+update public.profiles set status = 'pending_review' where id in
+  ('44444444-4444-4444-4444-444444444444', '55555555-5555-5555-5555-555555555555');
+select set_config('app.bypass_profile_guard', 'off', true);
+
+select private.test_login('33333333-3333-3333-3333-333333333333', 'aal2');
+
+select public.admin_review_verification(:'carol_verification_id'::uuid, 'approved'::public.verification_decision, 'looks good');
+
+select is(
+  (select status::text from public.profiles where id = '44444444-4444-4444-4444-444444444444'),
+  'active',
+  'approving a pending_review profile actually flips it to active'
+);
+
+select ok(
+  (select verified_at from public.profiles where id = '44444444-4444-4444-4444-444444444444') is not null,
+  'approval sets verified_at'
+);
+
+select is(
+  (select decision::text from public.verifications where id = :'carol_verification_id'::uuid),
+  'approved',
+  'the verification row itself records the approved decision'
+);
+
+select is(
+  (select count(*)::int from public.admin_audit
+   where admin_id = '33333333-3333-3333-3333-333333333333'
+     and action = 'review_verification'
+     and target_type = 'verification'
+     and target_id = :'carol_verification_id'::uuid
+     and details->>'decision' = 'approved'
+     and details->>'note' = 'looks good'),
+  1,
+  'approval writes exactly one admin_audit row with the real decision and note'
+);
+
+select public.admin_review_verification(:'dave_verification_id'::uuid, 'rejected'::public.verification_decision, 'blurry photo');
+
+select is(
+  (select status::text from public.profiles where id = '55555555-5555-5555-5555-555555555555'),
+  'onboarding',
+  'rejecting a pending_review profile reverts it to onboarding so the user can resubmit'
+);
+
+select ok(
+  (select verified_at from public.profiles where id = '55555555-5555-5555-5555-555555555555') is null,
+  'rejection never sets verified_at'
+);
+
+select is(
+  (select count(*)::int from public.admin_audit
+   where admin_id = '33333333-3333-3333-3333-333333333333'
+     and action = 'review_verification'
+     and target_type = 'verification'
+     and target_id = :'dave_verification_id'::uuid
+     and details->>'decision' = 'rejected'),
+  1,
+  'rejection is logged to admin_audit too, not just approvals'
+);
+
+-- The gap this whole addition closes, made explicit: approving bob's
+-- verification earlier in this file, while his profile was never in
+-- pending_review, left his profile exactly as it was -- no exception,
+-- no accidental activation of a profile that was never actually submitted.
+select is(
+  (select status::text from public.profiles where id = '22222222-2222-2222-2222-222222222222'),
+  'onboarding',
+  'admin_review_verification is a no-op on profile status when the profile was never actually in pending_review'
 );
 
 select * from finish();
