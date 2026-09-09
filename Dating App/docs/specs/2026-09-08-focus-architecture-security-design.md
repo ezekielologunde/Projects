@@ -1,33 +1,34 @@
 # Focus: Architecture and Security Design
 
 **Codename:** focus (rename any time)
-**Date:** 2026-09-08, revised 2026-09-09 after external review
+**Date:** 2026-09-08, revised 2026-09-09 (twice) after external review
 **Status:** Draft for review. No code exists yet. This document is the gate before any code is written.
-**Inputs:** `Dating App/research/2026-09-08-match-cap-competitor-research.md`, `Dating App/research/2026-09-08-intent-filters-diaspora-gaps.md`, and a full external review received 2026-09-09 (sixteen findings, all incorporated below; verified against current Vercel, Next.js, and Supabase documentation before being folded in).
+**Inputs:** `Dating App/research/2026-09-08-match-cap-competitor-research.md`, `Dating App/research/2026-09-08-intent-filters-diaspora-gaps.md`, and two rounds of full external review received 2026-09-09, both incorporated below after verifying every specific technical claim against current vendor documentation.
 
 ---
 
-## 0. Revision note (2026-09-09)
+## 0. Revision history
 
-The 2026-09-08 draft was reviewed line by line. Sixteen findings came back, all substantive, and all are reflected in this revision:
+### 0.1 First review (2026-09-09)
 
-1. Focused users were still accumulating a hidden backlog of new likes. **Fixed by mechanism, not by renaming**: see section 2.2 and 7.1. A focused profile is now removed from every other user's candidate pool, so no new like can reach them while they are focused. Only likes that arrived while they were still available can be waiting.
-2. The patent question was scheduled before "public launch." It now gates the start of Phase 2 (the matching mechanism itself), not just launch. See section 14, Phase −1.
-3. The 8 MB upload design would fail against Vercel's real 4.5 MB function payload limit. Redesigned around direct-to-storage signed uploads; see section 4.3 and 9.7.
-4. Stack updated to Next.js 16 (middleware.ts renamed to proxy.ts in Next.js 16).
-5. Supabase production cost corrected to $25 a month (Pro plan, includes a $10 compute credit covering one Micro instance), not $10.
-6. Key names updated to Supabase's publishable/secret key model ahead of the anon/service_role deprecation.
-7. Admin access now requires a second factor (aal2), not just a Google-linked account.
-8. `seeking` moved out of the publicly-selectable `profiles` table into a function-mediated sensitive table, matching how faith, politics, and heritage were already handled.
-9. The public accountability signal is removed. The underlying data stays, admin-only, as an abuse-detection input.
-10. Inactivity attribution now ignores system messages and tracks who actually went quiet, for the admin-only signal in point 9.
-11. Staging added, using ephemeral per-pull-request Supabase branches, before any external beta. Preview deployments no longer point at production.
-12. Migrations follow an expand-then-contract discipline; only expand migrations run automatically on merge.
-13. Genotype gets its own explicit, separate, off-by-default consent, decoupled from heritage.
-14. The "no money ever" framing is split into a permanent commitment (money never changes who you can meet or how visible you are) and a v1 tactical decision (no subscriptions yet), so a future flat, universal fee remains compatible with the mission if verification costs demand it at scale.
-15. The daily browse cap of 5 is explicitly labeled a starting hypothesis to be measured against dates and second dates, not fixed doctrine.
+Sixteen findings, all incorporated: the available/focused mechanism was introduced to stop a hidden backlog of likes accumulating behind a focused user; the patent question was moved to gate the start of core-loop implementation rather than just launch; the upload design was redone around Vercel's real 4.5 MB function payload limit; the stack moved to Next.js 16; Supabase's cost was corrected to $25 a month; the app was designed around Supabase's publishable/secret key model; admin access was given a mandatory second factor; `seeking` was moved out of the publicly-selectable table; the public accountability score was removed in favor of an admin-only signal; inactivity attribution was fixed to ignore system messages; staging was added on ephemeral per-PR Supabase branches; migrations were split into expand and contract; genotype got its own separate consent; and the money framing was split into a permanent commitment and a v1 tactical decision.
 
-Everything else in the 2026-09-08 draft was confirmed sound and is carried forward unchanged: the database-as-referee principle, likes being unselectable by users, deterministic-lock concurrency handling, the negative-authorization test list, and Realtime over Postgres Changes for chat.
+### 0.2 Second review (2026-09-09)
+
+Eight further findings, all incorporated, plus one product decision:
+
+1. **Internal helper functions were still exposed.** Section 6.5's rule ("internal helpers prefixed `_` are not granted") was never actually applied to `available`, `mutually_compatible`, and `preference_score`, which were labeled "internal" in prose but defined without the prefix and therefore fell under the "every function in section 7 gets `GRANT EXECUTE TO authenticated`" default. Confirmed against Supabase's own documentation: functions are executable by any role by default, with no exemption for naming conventions. **Fixed by moving every non-client-facing function into a dedicated `private` schema that is never added to the project's exposed-schema list**, so it is unreachable through the Data API regardless of grants, rather than relying on a naming convention that had already been violated once. See section 6.5.
+2. **A caller could still send a new like after becoming focused, through a race.** `decide_feed_item`, `_send_like`, and `respond_to_like` checked the target's availability but not the caller's. Fixed by making every availability check symmetric: both sides are checked at every step, with `_form_connection`'s row lock as the final authority. See sections 7.5, 7.6, 7.9.
+3. **A focused person could still appear in a feed that was generated before they became focused.** The read path for an already-generated daily feed had no availability check, only feed generation did, which contradicted the stated promise that a focused person never appears in anyone's feed. Fixed by checking availability at read time too, with backfill up to the daily ceiling when a card goes stale. See sections 6.2 and 7.4.
+4. **Supabase's signed upload URL cannot carry a 5-minute expiry.** Confirmed against Supabase's documentation: `createSignedUploadUrl` has no `expiresIn` parameter and is fixed at 2 hours. Fixed with an application-level `upload_tickets` table that expires in 5 minutes independently of the underlying Supabase URL's own 2-hour window. See section 5.2 and 7.16.
+5. **The upload-processing route accepted an arbitrary storage path from the client.** Fixed by having the client pass only a ticket id; the server resolves the path, owner, kind, and (for selfies) the linked verification attempt from the ticket row itself. See section 7.17.
+6. **The CSP would likely block Turnstile.** Confirmed against Cloudflare's documentation: Turnstile requires the literal `challenges.cloudflare.com` origin in `script-src`, not just a nonce, alongside the nonce propagated onto Turnstile's own script tag. Fixed in section 9.3.
+7. **Consent could not actually be re-recorded when a policy version changed**, because the original table's primary key `(profile_id, kind)` would collide on a second acceptance. Fixed by making consent an append-only event log. See section 5.2 and 7.18.
+8. **Closing notes were retained twice with contradictory lifetimes**, once forever on `connections.end_note` and once for 30 days in the message stream. Fixed by removing the column; the message stream is now the only copy and follows the same 30-day post-end purge as every other message.
+
+**Product decision: pending likes are now cleared, not just paused, the moment a user's last open slot fills.** The first review's fix (available/focused) stopped new likes from reaching a focused person. It left pre-existing likes waiting, which meant a person who formed a connection while several others had already liked them would, weeks later, resurface those old admirers one by one when the connection ended. That is a smaller version of the same problem: not a growing backlog, but a preserved one. This revision clears every other pending like, both directions, the instant a user transitions from available to focused, so that becoming available again is a genuine clean slate rather than a queue with a pause button. This is deliberately more expensive to the product's own match count, which is the point: it trades network efficiency for the "dating without backup options" premise the whole concept rests on. **Because this changes the exact capacity mechanism, it is explicitly added to the Phase −1 legal scope alongside the available/focused design itself**, not treated as a safe follow-on change.
+
+Everything else from both drafts was confirmed sound and is carried forward unchanged: the database-as-referee principle, likes being unselectable by users, deterministic-lock concurrency handling, the negative-authorization test list, and Realtime over Postgres Changes for chat.
 
 ---
 
@@ -39,11 +40,11 @@ A dating web app where each person chooses how many people they can genuinely ge
 
 ### Goals, in priority order
 
-1. **Attention, not volume.** Every mechanic reduces parallel options: the capacity limit, the daily browse cap, full removal from discovery while focused, no like counts, no feed.
+1. **Attention, not volume.** Every mechanic reduces parallel options: the capacity limit, the daily browse cap, full removal from discovery while focused, clearing other pending likes the moment capacity fills, no like counts, no feed.
 2. **Serious people first.** Non-negotiables (kids, faith and practice level, politics, habits) are free, set at onboarding, shown above photos, and enforced mutually before anyone appears in anyone's feed.
 3. **Heritage on the user's terms.** Self-written background, community or tribe, origin, language, and raised-in fields. Heritage affects matching only when the user switches it on in settings, and then each rule carries an importance the user chose: nice to have, important, or must. The system never infers, ranks, or optimises on heritage by itself.
-4. **Nothing to collect.** No validation loop: no like counter, no "who liked you," no posting, no social handles, no visible reputation score of any kind.
-5. **Safety and privacy as design constraints.** Every rule above is enforced in the database, not the browser. Sensitive attributes (faith, ethnicity, genotype, who you want to meet, location) are minimised, access-controlled through functions rather than raw table access, and deletable.
+4. **Nothing to collect.** No validation loop: no like counter, no "who liked you," no posting, no social handles, no visible reputation score of any kind, and no backlog of old admirers waiting behind a closed door.
+5. **Safety and privacy as design constraints.** Every rule above is enforced in the database, not the browser. Sensitive attributes (faith, ethnicity, genotype, who you want to meet, location) are minimised, access-controlled through functions rather than raw table access, and deletable. Every function that is not meant to be called directly by a client lives where a client cannot reach it, not merely where it is labeled as such.
 6. **Accountability, held internally.** Connections end with a note. How people end connections is tracked to catch abuse and repeat ghosting; it is not displayed as a score, because a displayed score creates pressure to keep talking to someone rather than end things honestly.
 
 ### A permanent commitment versus a v1 decision
@@ -62,7 +63,7 @@ These are different promises and the document keeps them distinct:
 - Native iOS or Android apps.
 - Automated selfie verification. A human reviews every selfie.
 - Income, job, or education verification.
-- A visible reputation, accountability, or "communicates respectfully" score of any kind (see revision note, point 9).
+- A visible reputation, accountability, or "communicates respectfully" score of any kind.
 
 ### Success measures (written before launch, none are engagement)
 
@@ -70,6 +71,7 @@ These are different promises and the document keeps them distinct:
 - Share of connections ended with a note rather than faded.
 - Pairs who close their accounts together.
 - Zero unauthorised reads of another user's likes, messages, photos, or sensitive fields (verified by tests, not hoped for).
+- Zero cases in testing where a client can reach a function through the Data API that this document designates internal.
 
 The daily browse cap of 5 and the 1/2/3 capacity ceiling are both starting hypotheses, chosen from the research rather than revealed truth. Both should be revisited against the funnel (profile shown → connection → real conversation → date → second date), never against time-on-app or session count.
 
@@ -83,7 +85,7 @@ This section restates the product design so the architecture can be checked agai
 
 1. Sign in with a 6-digit email code or Google. No passwords exist anywhere in the system.
 2. Age gate: date of birth, 18 and over. Under-18 attempts are refused and the attempt is logged without the date.
-3. Consent, each versioned and each separately explicit: terms, privacy policy, sensitive data (faith, heritage, seeking, politics), and, only if the user opens that section, genotype data (see section 8.1).
+3. Consent, recorded as append-only events (section 5.2), each versioned and each separately explicit: terms, privacy policy, sensitive data (faith, heritage, seeking, politics), and, only if the user opens that section, genotype data (see section 8.1).
 4. Profile: first name, gender, who you want to meet, city, two to six photos with a face in the first, three prompt answers, occupation, education level, optional height.
 5. Capacity: 1 (default), 2, or 3.
 6. Non-negotiables, then optional heritage (off by default in matching, see section 2.3), then optional health section (genotype, off by default, its own consent).
@@ -98,15 +100,16 @@ available(p) := active_connections(p) < capacity(p)
 focused(p)   := not available(p)
 ```
 
-- **Discovery** shows up to 5 profiles a day, one at a time, Like or Pass, no going back. Candidates are restricted to people who are currently `available`. **A focused person never appears in anyone's discovery feed, full stop.** This is the point of the mechanism: focus is not just a private state the user sees, it removes them from the matching pool entirely, so nobody's likes pile up against a person who has already stopped looking. There is no ranking between available and focused people because focused people are never candidates.
-- **Waiting list.** When you have an open slot, people who liked you while they, and you, were both still available are shown one at a time before new discovery. Only likes from currently-`available` senders are ever surfaced; if someone who liked you has since filled their own capacity elsewhere, their like sits dormant and is never shown to you while they remain focused. You Like or Pass each surfaced item. There is no count and no list view.
-- **Likes and forming a connection.** A like is silent. The other person never sees a count and there is no "who liked you" screen. If both people have liked each other and both are available at that instant, the app confirms and a connection forms immediately. If a like arrives for someone who has just become focused (a race: they were available when shown, focused by the time the like was processed), the like is declined with a plain message, not silently queued. Likes that go unanswered expire after 30 days.
-- **When you're Focused,** discovery disappears for you too. No blur, no upsell, no queue count. Your home screen is your connection or connections. Your profile is not shown to anyone new, and nobody can send you a new like. Likes that reached you before you became focused still wait, one at a time, exactly as they would for an available person.
-- **A connection** is a private text chat plus each other's full profile. It ends when either person taps End Connection and picks or writes a short closing note, which the other person sees. Ending frees both slots immediately, and each person becomes `available` again the instant their own count drops below their own capacity. If nobody has written for 14 days, both get a "still here?" prompt (a system message, which does not count toward the human-activity check in section 7.9), and after 3 more silent days with no human message from either side, the connection closes as faded.
+- **Discovery** shows up to 5 profiles a day, one at a time, Like or Pass, no going back. Candidates are restricted to people who are currently `available`, checked both when a day's feed is first generated and again every time that feed is read back, so a person who becomes focused after being shown that morning is removed from the feed the next time it loads and, where possible, replaced so the day's allotment stays at 5. **A focused person never appears in anyone's discovery feed.**
+- **Waiting list.** When you have an open slot, people who liked you while they, and you, were both still available are shown one at a time before new discovery. Only likes from senders who are currently `available` are ever surfaced. You Like or Pass each surfaced item. There is no count and no list view.
+- **Likes and forming a connection.** A like is silent. The other person never sees a count and there is no "who liked you" screen. Sending a like requires both the sender and the recipient to be available at that exact moment, re-checked immediately before the like is created or a connection forms, closing the race where a person becomes focused between being shown a card and acting on it. Likes that go unanswered expire after 30 days.
+- **When your last open slot fills, you enter Focused and every other pending like involving you, in either direction, is cleared.** Not merely paused: cleared. Anyone who had liked you and was still waiting, and anyone you had liked and were still waiting on, is let go. This is deliberate. When you become available again, you start from nothing: no old admirers resurface, no old interests linger. The cost is fewer eventual matches; the point is that focus means focus, not a queue with the lid on.
+- **When you're Focused,** discovery disappears for you too. No blur, no upsell, no queue count. Your home screen is your connection or connections. Your profile is not shown to anyone new, and nobody can send you a new like.
+- **A connection** is a private text chat plus each other's full profile. It ends when either person taps End Connection and picks or writes a short closing note, which appears to the other person as a message in the chat. Ending frees both slots immediately, and each person becomes `available` again the instant their own count drops below their own capacity. If nobody has sent a human message for 14 days, both get a "still here?" prompt (a system message, which does not count as a human message for this purpose), and after 3 more silent days with no human message from either side, the connection closes as faded.
 
-**Why this design differs from the profile staying universally visible:** the 2026-09-08 draft kept a focused user's profile visible to everyone and only hid the discovery feed on the viewing side, which is also how the Sidekick patent's product description reads and was chosen partly as a way to keep some daylight from that patent's specific claim language (which requires making the at-limit user invisible and declining their outgoing likes). This revision instead removes focused users from candidate generation because it is the correct product fix for the backlog problem regardless of the patent. Whether this new mechanism sits closer to or further from the patent's claims is exactly the kind of question that belongs to counsel, not to this document. See section 14, Phase −1: the entire visibility mechanism in this section is provisional pending that review, and the review must happen before section 7's functions are implemented.
+**Why this design differs from a profile that stays universally visible:** an earlier draft kept a focused user's profile visible to everyone and only hid the discovery feed on the viewing side, partly as a way to keep some daylight from the Sidekick patent's specific claim language, which requires making the at-limit user invisible and declining their outgoing likes. This revision instead removes focused users from candidate generation, and now clears their pending likes outright, because those are the correct product fixes for the backlog problem regardless of the patent. Whether this mechanism sits closer to or further from the patent's claims is exactly the kind of question that belongs to counsel, not to this document. See section 14, Phase −1: the entire visibility and clearing mechanism in this section is provisional pending that review, and the review must happen before section 7's functions are implemented.
 
-**Nothing to collect.** No like counts, no feed, no posting, no social handles, no visible score of any kind. Bios containing an Instagram handle or "add me on" are flagged for admin review.
+**Nothing to collect.** No like counts, no feed, no posting, no social handles, no visible score of any kind, no waiting queue that survives a focused period. Bios containing an Instagram handle or "add me on" are flagged for admin review.
 
 ### 2.3 Profile and non-negotiables
 
@@ -141,16 +144,17 @@ focused(p)   := not available(p)
 2. **Private interactions**: likes (who liked whom), messages, closing notes, reports, blocks.
 3. **Photos** including verification selfies, and the raw originals during the brief upload-processing window.
 4. **Identity**: email, date of birth, Google account link.
-5. **Integrity of the mechanic**: capacity limit, browse cap, mutual pre-screen, the available/focused candidate filter. If these can be bypassed the product is a worse Tinder.
+5. **Integrity of the mechanic**: capacity limit, browse cap, mutual pre-screen, the available/focused candidate filter, the clear-on-focus rule. If these can be bypassed the product is a worse Tinder.
 6. **Admin capability**: approve, ban, read reports.
 7. **Availability** of the service and of the data (backups).
+8. **The boundary between client-reachable and internal functions.** A function this document calls internal must actually be unreachable, not merely undocumented for clients.
 
 ### 3.2 Actors
 
 | Actor | Motive | Capability |
 |---|---|---|
 | Anonymous attacker | Scrape profiles, enumerate users, abuse auth endpoints | Network access, scripts, disposable emails |
-| Malicious registered user | See who liked them, exceed capacity, view profiles they were not served, harass, scam, stalk | Valid JWT, ability to call any RPC or REST endpoint directly, bypassing the UI |
+| Malicious registered user | See who liked them, exceed capacity, view profiles they were not served, call functions the UI never exposes, harass, scam, stalk | Valid JWT, ability to call any RPC or REST endpoint directly, bypassing the UI |
 | Harasser or stalker | Locate or persist contact with a specific person | Registered user, possibly multiple accounts |
 | Romance scammer | Build trust, move off-platform, extract money | Fake photos, scripted conversation, many accounts |
 | Scraper or competitor | Bulk-export profiles and photos | Registered accounts plus automation |
@@ -160,9 +164,9 @@ focused(p)   := not available(p)
 
 ### 3.3 Attack surfaces
 
-- Supabase REST (PostgREST) and RPC endpoints, reachable directly with a user JWT, regardless of what the UI shows.
+- Supabase REST (PostgREST) and RPC endpoints, reachable directly with a user JWT, regardless of what the UI shows, and regardless of what this document calls a function whether or not the database actually enforces that.
 - Supabase Realtime channels.
-- Supabase Storage endpoints for the `incoming`, `photos`, and `verification` buckets, including the signed-upload-URL issuance path.
+- Supabase Storage endpoints for the `incoming`, `photos`, and `verification` buckets, including the signed-upload-URL issuance path and its longer, vendor-fixed expiry.
 - Supabase Auth endpoints (email OTP, Google OAuth callback, MFA enrollment and challenge).
 - Next.js server actions and route handlers (upload ticket issuance, upload processing, cron, admin).
 - The browser: XSS through user-authored text (prompts, notes, messages, heritage values), clickjacking, leaked secrets in the bundle.
@@ -172,27 +176,33 @@ focused(p)   := not available(p)
 
 ### 3.4 Top risks, ranked
 
-1. **RLS or RPC gap that leaks likes, messages, or photos.** Mitigation: deny-by-default RLS on every table and bucket, all core writes through SECURITY DEFINER functions with explicit checks, pgTAP tests that assert the negative cases.
-2. **Capacity, browse-cap, or available/focused bypass by calling functions directly or concurrently.** Mitigation: limits enforced inside functions with row locks; candidate queries filter on `available(target)` at read time, not at feed-generation time only; no client-side-only rule anywhere; concurrency tests.
-3. **Profile viewing outside the served set (IDOR).** Mitigation: `can_view_profile()` is the single gate for profile rows and photo objects; it only returns true for self, admin, active connection partner, today's feed, or a surfaced waiting-list like from a currently-available sender.
-4. **Sensitive attribute exposure through direct table access.** Mitigation: seeking, faith, politics, heritage, and genotype all live in owner-only tables (`profile_sensitive`, `profile_answers`, `profile_heritage`); matching reads them inside SECURITY DEFINER functions and returns only what the viewer is allowed to see; no bulk endpoints; no sensitive column is ever reachable through a raw `SELECT` on a table another user can query.
-5. **Location precision.** Mitigation: coordinates rounded to about 1 km before storage; only a distance bucket is ever returned; city label is user-chosen.
-6. **Harassment persisting across blocks or accounts.** Mitigation: blocks are permanent and bidirectional, end connections, purge feed items and likes; reports carry context; human review; ban is a status, not a deletion, so a banned email cannot re-enter.
-7. **Account takeover.** Mitigation: no passwords; email OTP codes are short-lived and rate-limited; Google OAuth with PKCE; HttpOnly cookies; admin accounts additionally require aal2 (Supabase TOTP MFA), enforced in the database, not just assumed from the identity provider.
-8. **Scraping.** Mitigation: 5 profiles a day per account, human verification before visibility, CAPTCHA on sign-up, no list endpoints, photos only through authenticated storage reads gated by `can_view_profile()`.
-9. **XSS.** Mitigation: React escaping, no `dangerouslySetInnerHTML`, strict CSP with per-request nonces via `proxy.ts`, user text stored as plain text and length-limited.
-10. **Secret leakage.** Mitigation: the secret key exists only in the server runtime env; the client bundle contains only the publishable key and project URL; CI checks the built bundle for both the `sb_secret_` prefix and the legacy string `service_role` as a defense-in-depth belt-and-braces check.
-11. **Insider misuse.** Mitigation: admin actions only through audited functions that additionally require aal2; verification selfies deleted after decision; admins see reports and profiles, never messages except those attached to a report.
-12. **Data loss.** Mitigation: Supabase daily backups on the paid project; migrations in git; restore procedure documented in section 10.
-13. **A raw image upload exceeding a serverless function's body limit, or a decompression-bomb image.** Mitigation: uploads go direct-to-storage via a signed URL, never through a Vercel function body; the processing step enforces a sane maximum decoded pixel count before Sharp expands the image in memory.
+1. **A function documented as internal is actually reachable via the Data API.** This happened once already in this document's own drafting (section 0.2, finding 1). Mitigation: internal functions live in a `private` schema that is never added to the project's exposed-schema configuration, so PostgREST cannot route to it regardless of grants; grants are a secondary hygiene measure, not the control being relied on. A test in section 11 calls every function this document designates internal through the REST endpoint directly and asserts it is unreachable.
+2. **Capacity, browse-cap, or available/focused bypass through an asymmetric check or a race.** Mitigation: every availability check is applied to both parties, at every step, not just the recipient; row locks in `_form_connection` are the final authority; concurrency tests assert zero stray pending likes after a race.
+3. **A stale, already-generated feed still shows a now-focused person.** Mitigation: availability is re-checked at read time, not only at generation time, with backfill up to the daily ceiling.
+4. **Profile viewing outside the served set (IDOR).** Mitigation: `can_view_profile()` is the single gate for profile rows and photo objects; it only returns true for self, admin, active connection partner, today's feed with the target still available, or a surfaced waiting-list like from a currently-available sender.
+5. **Sensitive attribute exposure through direct table access.** Mitigation: seeking, faith, politics, heritage, and genotype all live in owner-only tables; matching reads them inside functions in the `private` schema and returns only what the viewer is allowed to see; no bulk endpoints; no sensitive column is ever reachable through a raw `SELECT` on a table another user can query.
+6. **An upload-processing endpoint that trusts a client-supplied storage path.** Mitigation: the client passes only a ticket id; the server resolves everything else from the ticket row, which is scoped to the calling user.
+7. **Location precision.** Mitigation: coordinates rounded to about 1 km before storage; only a distance bucket is ever returned; city label is user-chosen.
+8. **Harassment persisting across blocks or accounts.** Mitigation: blocks are permanent and bidirectional, end connections, purge feed items and likes; reports carry context; human review; ban is a status, not a deletion, so a banned email cannot re-enter.
+9. **Account takeover.** Mitigation: no passwords; email OTP codes are short-lived and rate-limited; Google OAuth with PKCE; HttpOnly cookies; admin accounts additionally require aal2 (Supabase TOTP MFA), enforced in the database, not just assumed from the identity provider.
+10. **A CSP that silently breaks the CAPTCHA it depends on.** Mitigation: `script-src` and `frame-src` explicitly allow `challenges.cloudflare.com` by origin, not merely by nonce, and the nonce is also propagated onto Turnstile's own script tag as Cloudflare's documentation specifies.
+11. **Scraping.** Mitigation: 5 profiles a day per account, human verification before visibility, CAPTCHA on sign-up, no list endpoints, photos only through authenticated storage reads gated by `can_view_profile()`.
+12. **XSS.** Mitigation: React escaping, no `dangerouslySetInnerHTML`, strict CSP with per-request nonces via `proxy.ts`, user text stored as plain text and length-limited.
+13. **Secret leakage.** Mitigation: the secret key exists only in the server runtime env; the client bundle contains only the publishable key and project URL; CI checks the built bundle for both the `sb_secret_` prefix and the legacy string `service_role`.
+14. **Insider misuse.** Mitigation: admin actions only through audited functions that additionally require aal2; verification selfies deleted after decision; admins see reports and profiles, never messages except those attached to a report.
+15. **Data loss.** Mitigation: Supabase daily backups on the paid project; migrations in git; restore procedure documented in section 10.
+16. **A raw image upload exceeding a serverless function's body limit, or a decompression-bomb image.** Mitigation: uploads go direct-to-storage via a signed URL, never through a Vercel function body; the processing step enforces a sane maximum decoded pixel count before Sharp expands the image in memory.
+17. **A consent record that cannot represent re-acceptance of a new policy version.** Mitigation: consent is an append-only event log, not a single row per kind.
 
 ### 3.5 Security principles that every later decision must honour
 
-- **Deny by default.** No table, bucket, or function is reachable until a policy or grant says so.
+- **Deny by default.** No table, bucket, or function is reachable until a policy, grant, or schema-exposure decision says so.
+- **Unreachable means unreachable, not undocumented.** A function this document calls internal is placed where the Data API cannot route to it. A naming convention is not a control.
 - **The database is the referee.** Capacity, caps, compatibility, availability, and visibility are decided in Postgres. The UI is a rendering of what the database allows.
-- **No counts, no lists, no scores.** No endpoint returns "how many liked you," "everyone who liked you," or any accountability or reputation number, however coarse.
-- **Least data.** Store the coarse version when the precise one is not needed. Delete when the purpose ends, including raw upload bytes within minutes.
-- **Symmetry.** Anything one user can see about another, the other could see about them under the same conditions.
+- **Checks are symmetric.** Any rule that depends on two people's state is checked for both of them, at every step that matters, not just at the step where it was first noticed.
+- **No counts, no lists, no scores, no preserved backlog.** No endpoint returns "how many liked you," "everyone who liked you," any accountability or reputation number, or old likes held over from a focused period.
+- **Least data.** Store the coarse version when the precise one is not needed. Delete when the purpose ends, including raw upload bytes within minutes and closing notes on the same 30-day clock as every other message.
+- **Symmetry between users.** Anything one user can see about another, the other could see about them under the same conditions.
 - **Auditable, stepped-up admin.** Every admin action writes an audit row before it takes effect, and every admin action requires a session that has completed a second factor.
 
 ---
@@ -207,17 +217,21 @@ Browser (PWA, Next.js client)
    v
 Next.js 16 app on Vercel (App Router, server components, server actions, route handlers, proxy.ts)
    |            |                              |
-   |            |                              +--> Route handlers: /api/upload/ticket (signed upload URL), /api/upload/process
-   |            |                                    (server-side image pipeline), /api/cron/* (purge jobs, bearer secret)
-   |            +--> Server-side Supabase client (user JWT via @supabase/ssr) for reads/writes under RLS
+   |            |                              +--> Route handlers: /api/upload/ticket (issues a Supabase signed
+   |            |                                    upload URL plus an app-level ticket), /api/upload/process
+   |            |                                    (ticket id only, server-side image pipeline), /api/cron/*
+   |            +--> Server-side Supabase client (user JWT via @supabase/ssr) for reads/writes under RLS,
+   |                 calling only functions in the `public` schema
    +--> Client-side Supabase client (publishable key + user session) for Realtime subscriptions,
         direct-to-storage signed uploads, and storage reads
                 v
 Supabase project (hosted, single region)
+   - Exposed schemas: `public` and the default `graphql_public` only. `private` is never added to this list.
    - Auth: email OTP, Google OAuth (PKCE), TOTP MFA for admins, Turnstile CAPTCHA on sign-up and sign-in
-   - Postgres 17: tables, RLS, SECURITY DEFINER functions, pg_cron jobs
+   - Postgres 17: `public` (client-facing tables and RPCs), `private` (matching logic, gates, admin checks,
+     unreachable via the Data API), RLS, pg_cron jobs
    - Realtime: postgres_changes on messages, RLS-filtered
-   - Storage: private buckets `incoming`, `photos`, `verification`, policies gated by SQL functions
+   - Storage: private buckets `incoming`, `photos`, `verification`, policies gated by `private` functions
 External
    - Google OAuth
    - Transactional email provider for OTP codes (Supabase default SMTP for development, custom SMTP for launch)
@@ -227,36 +241,36 @@ External
 ### 4.2 Trust boundaries
 
 1. **Browser to Next.js server.** Untrusted input. Everything validated with zod schemas on the server before touching Supabase.
-2. **Browser to Supabase Storage directly (signed upload URLs).** Untrusted bytes, but bounded: the URL is short-lived, scoped to one path, and the `incoming` bucket enforces a size ceiling and allowed MIME types at the bucket configuration level as a first filter.
-3. **Next.js server to Supabase with the user JWT.** Trusted identity, untrusted intent. RLS and function checks apply exactly as if the browser called Supabase directly.
+2. **Browser to Supabase Storage directly (signed upload URLs).** Untrusted bytes, but bounded: the underlying Supabase URL is valid for 2 hours (a Supabase-fixed value with no shorter option), the `incoming` bucket enforces a size ceiling and allowed MIME types at the bucket configuration level, and the application-level `upload_tickets` row independently expires in 5 minutes regardless of the URL's own longer window.
+3. **Next.js server to Supabase with the user JWT.** Trusted identity, untrusted intent. RLS and the `public`-schema functions apply exactly as if the browser called Supabase directly. The server never calls anything in `private` directly; only RLS policies and `public` functions do, inside the database.
 4. **Next.js server to Supabase with the secret key.** Fully trusted. Used only in: the upload-processing route (to read from `incoming` and write to `photos` or `verification`), the cron purge route, and nowhere else. Every use is listed in this document and grepped for in CI.
 5. **Supabase internal.** pg_cron jobs run with database owner rights and are the only code that touches rows across users without a JWT.
 
 ### 4.3 Request flows
 
-**Daily feed.** Client calls server action `getFeed()`. Server calls RPC `get_daily_feed()` with the user JWT. Function checks status and capacity, generates or returns today's `feed_items` (candidates restricted to `available(target)`), and returns card data (viewable columns only plus a distance bucket and photo paths). Client fetches photo bytes from Storage with its own JWT; the Storage policy calls `can_view_profile()`, which is true because a feed item exists for today.
+**Daily feed.** Client calls server action `getFeed()`. Server calls the `public` RPC `get_daily_feed()` with the user JWT. The function checks status and capacity, and either returns today's already-generated `feed_items` after re-checking `private.available()` for every still-undecided item (backfilling stale ones up to 5 where a fresh candidate exists) or generates a new set of 5 from candidates who are compatible and currently available. Client fetches photo bytes from Storage with its own JWT; the Storage policy calls `private.can_view_profile()`, which is true because a feed item exists for today and the target is still available.
 
-**Like.** Client calls `decideFeedItem(itemId, 'like')`. Server calls RPC `decide_feed_item()`. Function verifies ownership and freshness of the item, re-checks `available(target)` (closing the race described in section 2.2), records the decision, and calls internal `_send_like()`, which either stores a pending like or forms a connection under lock. Client receives `liked`, `connected`, or `target_focused`. No other information is returned.
+**Like.** Client calls `decideFeedItem(itemId, 'like')`. Server calls the `public` RPC `decide_feed_item()`. The function verifies ownership and freshness of the item, re-checks `private.available()` for both the caller and the target, records the decision, and calls `private._send_like()`, which itself re-checks both sides again immediately before writing. Client receives `liked`, `connected`, or `not_available` (a single error code covering either side having become focused, so the client never learns which side changed). No other information is returned.
 
-**Waiting list.** Client calls `nextWaiting()`. Server calls RPC `next_waiting_like()`. Function returns one like at a time, restricted to senders who are currently `available`, and stamps `surfaced_at`, which is what makes that person's profile and photos viewable to the recipient.
+**Waiting list.** Client calls `nextWaiting()`. Server calls the `public` RPC `next_waiting_like()`. The function returns one like at a time, restricted to senders who are currently available, and stamps `surfaced_at`, which is what makes that person's profile and photos viewable to the recipient.
 
-**Chat.** Client subscribes to Realtime `postgres_changes` on `messages` filtered by `connection_id`. Realtime enforces RLS with the user's JWT, so a user can only receive rows for connections they belong to. Sending is a server action that inserts under RLS; a trigger enforces membership, connection status, length, rate limits, and stamps `last_human_message_at` and `last_human_sender_id` on the connection (system messages do not touch these fields).
+**Chat.** Client subscribes to Realtime `postgres_changes` on `messages` filtered by `connection_id`. Realtime enforces RLS with the user's JWT, so a user can only receive rows for connections they belong to. Sending is a server action that inserts under RLS; a trigger enforces membership, connection status, length, rate limits, and stamps `last_human_message_at` and `last_human_sender_id` on the connection (system messages, including the closing note, do not touch these fields).
 
 **Photo or selfie upload.**
-1. Client calls server action `createUploadTicket(kind)`. Server generates a Supabase Storage signed upload URL for `incoming/{userId}/{uuid}`, TTL 5 minutes, and returns it.
+1. Client calls server action `createUploadTicket(kind, position?, verificationId?)`. Server inserts an `upload_tickets` row (5-minute application expiry) and requests a Supabase Storage signed upload URL for `incoming/{userId}/{ticketId}` (a Supabase-fixed 2-hour window, unrelated to and longer than the ticket's own expiry). Returns the URL and the ticket id.
 2. Client uploads the raw file bytes directly to Supabase Storage using that URL. This never touches a Vercel function body, so Vercel's 4.5 MB function payload limit does not apply; the `incoming` bucket itself enforces a 15 MB ceiling and an image-only MIME allowlist as a first filter.
-3. Client calls server action `processUpload(objectPath, kind, position?)`. Server, using the secret key: downloads the object from `incoming`; sniffs real file type from bytes (rejects non-images regardless of extension or declared MIME); decodes with `sharp` behind a maximum-decoded-pixel-count guard; strips all metadata including GPS; resizes to a maximum of 1600 px (1200 px for selfies) on the long edge; re-encodes as WebP; writes to `photos/{userId}/{photoId}.webp` or `verification/{userId}/{verificationId}.webp`; inserts or updates the corresponding row under the user's JWT (so RLS still governs the metadata row); deletes the `incoming` object immediately.
-4. A cron job purges anything left in `incoming` older than one hour, as a safety net for a client that uploads but never calls step 3.
+3. Client calls server action `processUpload(ticketId)`, passing nothing else. Server, using the secret key: loads the ticket, requiring `ticket.user_id = auth.uid()`, `ticket.used_at IS NULL`, and `ticket.expires_at > now()` under the user's own JWT for that check (the actual byte-moving happens with the secret key afterward); downloads the object at the path recorded on the ticket, never a client-supplied path; sniffs real file type from bytes (rejects non-images regardless of extension or declared MIME); decodes with `sharp` behind a maximum-decoded-pixel-count guard; strips all metadata including GPS; resizes to a maximum of 1600 px (1200 px for selfies) on the long edge; re-encodes as WebP; writes to a server-generated canonical path (`photos/{userId}/{newPhotoId}.webp` or `verification/{userId}/{ticket.verification_id}.webp`); inserts or updates the corresponding row; marks the ticket `used_at = now()`; deletes the `incoming` object immediately.
+4. A cron job purges anything left in `incoming` older than one hour, as a safety net for a client that uploads but never calls step 3, and a separate daily job removes used or long-expired ticket rows.
 
-The original bytes are held only in the private `incoming` bucket for the seconds between upload and processing, then deleted. This is a materially different and more honest claim than "original bytes are never stored," and section 8.3 uses this exact wording.
+The original bytes are held only in the private `incoming` bucket for the seconds between upload and processing, then deleted.
 
-**Admin.** `/admin` route group. Every request re-checks `is_admin_mfa()` server-side, which requires both admin-role membership and an aal2 session. Every mutation is an RPC that writes to `admin_audit` inside the same transaction.
+**Admin.** `/admin` route group. Every request re-checks `private.is_admin_mfa()` (exposed to the client only through a thin `public` RPC `am_i_admin()` used purely for UI gating; the real enforcement is in RLS and every admin function's own precondition). Every mutation is an RPC that writes to `admin_audit` inside the same transaction.
 
 ---
 
 ## 5. Data model
 
-All tables in schema `public` unless noted. `uuid` primary keys default to `gen_random_uuid()`. Timestamps are `timestamptz`. Every table has RLS enabled. Column lengths are enforced with CHECK constraints, not just in the app.
+All client-facing tables and RPCs live in schema `public`. Every function this document calls internal lives in schema `private`, which is never added to the project's exposed-schema configuration (Supabase's default is `public` plus `graphql_public`), so it is unreachable through PostgREST regardless of grants. `uuid` primary keys default to `gen_random_uuid()`. Timestamps are `timestamptz`. Every table has RLS enabled. Column lengths are enforced with CHECK constraints, not just in the app.
 
 ### 5.1 Enumerated types
 
@@ -284,6 +298,7 @@ report_reason:    fake | harassment | scam | underage | off_platform_push | inap
 report_status:    open | reviewed | actioned | dismissed
 verification_decision: approved | rejected
 consent_kind:     terms | privacy | sensitive_data | genotype_data
+consent_action:   accepted | withdrawn
 upload_kind:      photo | selfie
 ```
 
@@ -309,18 +324,18 @@ upload_kind:      photo | selfie
 | created_at, updated_at, last_active_at | timestamptz | |
 | verified_at | timestamptz | set by admin function |
 
-`seeking` deliberately does not live here; see `profile_sensitive` below. This corrects the 2026-09-08 draft, which placed it in `profiles` while every other sensitive field was already owner-only, an inconsistency flagged in review.
+`seeking` deliberately does not live here; see `profile_sensitive` below.
 
-**profile_sensitive** (owner and functions only; no policy grants any other user a `SELECT`)
+**profile_sensitive** (owner and `private`-schema functions only; no policy grants any other user a `SELECT`)
 
 | Column | Type | Notes |
 |---|---|---|
 | profile_id | uuid PK FK | |
 | seeking | seeking | |
 
-A viewer never selects this table. `can_view_profile`-gated functions read it and return `seeking` only as part of a card, alongside the mutual gender/seeking check already performed server-side in `mutually_compatible()`.
+A viewer never selects this table. `can_view_profile`-gated functions read it and return `seeking` only as part of a card, alongside the mutual gender/seeking check already performed server-side in `private.mutually_compatible()`.
 
-**profile_private** (owner and functions only)
+**profile_private** (owner and `private`-schema functions only)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -332,13 +347,11 @@ A viewer never selects this table. `can_view_profile`-gated functions read it an
 | review_flags | jsonb | e.g. `{"social_handle": true}` set by trigger on prompt text |
 | email_notifications | boolean | |
 
-**profile_answers** (owner and functions only)
+**profile_answers** (owner and `private`-schema functions only)
 
-goal, kids, faith_label (text up to 40), faith_key (text, normalised), faith_practice, politics, smoking, drinking, timeline, relocate, income_band (nullable), health_section_enabled (boolean, default false), genotype (nullable, only when `health_section_enabled` and the `genotype_data` consent exists).
+goal, kids, faith_label (text up to 40), faith_key (text, normalised), faith_practice, politics, smoking, drinking, timeline, relocate, income_band (nullable), health_section_enabled (boolean, default false), genotype (nullable, only when `health_section_enabled` and a `genotype_data` `accepted` consent event exists).
 
-Viewable subset for others is served through functions, never by direct select. This was already correct in the 2026-09-08 draft; only `seeking` was the outlier, now fixed above.
-
-**profile_heritage** (owner and functions only)
+**profile_heritage** (owner and `private`-schema functions only)
 
 | Column | Type |
 |---|---|
@@ -349,13 +362,13 @@ Viewable subset for others is served through functions, never by direct select. 
 
 PK `(profile_id, field, value_key)`. At most 5 values per field, enforced by trigger.
 
-**preferences** (owner and functions only)
+**preferences** (owner and `private`-schema functions only)
 
 kids_must boolean, kids_accept kids[]; faith_key_must boolean, faith_key_accept text[]; practice_must boolean, practice_accept practice[]; politics_must boolean, politics_accept politics[]; smoking_must, smoking_accept habit[]; drinking_must, drinking_accept habit[]; genotype_must boolean, genotype_accept genotype[]; use_heritage boolean default false. A `must` with an empty accept array is rejected by CHECK.
 
-**heritage_preferences** (owner and functions only)
+**heritage_preferences** (owner and `private`-schema functions only)
 
-`(profile_id, field)` PK, mode pref_mode, accept_keys text[] (normalised, up to 10). Empty accept_keys is rejected. Rows are ignored entirely by matching while `preferences.use_heritage` is false, so a user can switch heritage matching off and on without losing their rules.
+`(profile_id, field)` PK, mode pref_mode, accept_keys text[] (normalised, up to 10). Empty accept_keys is rejected. Rows are ignored entirely by matching while `preferences.use_heritage` is false.
 
 **photos**
 
@@ -364,7 +377,7 @@ kids_must boolean, kids_accept kids[]; faith_key_must boolean, faith_key_accept 
 | id | uuid PK | |
 | profile_id | uuid FK | |
 | position | smallint | CHECK 1..6, unique per profile |
-| storage_path | text | `photos/{profile_id}/{id}.webp`, CHECK matches pattern |
+| storage_path | text | `photos/{profile_id}/{id}.webp`, CHECK matches pattern, always server-generated |
 | width, height | smallint | |
 | created_at | timestamptz | |
 
@@ -373,6 +386,21 @@ Trigger: max 6 rows per profile; position 1 required before status can become `p
 **verifications**
 
 id, profile_id, pose_code (text), selfie_path (text, nullable after decision), submitted_at, decided_at, decision (nullable), reviewer_id (FK admins), note (up to 300). Max 3 submissions per day per profile (trigger).
+
+**upload_tickets** (no direct user access at all; function-only, same pattern as `likes`)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK | |
+| kind | upload_kind | |
+| object_path | text | `incoming/{user_id}/{id}`, server-generated |
+| position | smallint | nullable, 1..6, only for `kind = 'photo'` |
+| verification_id | uuid FK | nullable, only for `kind = 'selfie'`, must belong to `user_id` and be undecided |
+| created_at, expires_at | timestamptz | `expires_at = created_at + 5 minutes`, independent of the underlying Supabase URL's own 2-hour validity |
+| used_at | timestamptz | nullable |
+
+Index `(user_id, used_at)`; purged daily once used or more than 24 hours past `expires_at`.
 
 **feed_items**
 
@@ -400,7 +428,7 @@ Unique `(user_id, target_id, served_on)`. Index `(user_id, served_on)`. Rows old
 | surfaced_at | timestamptz | set when shown to `to_user` by `next_waiting_like()` |
 | responded_at | timestamptz | |
 
-Unique `(from_user, to_user)`. Index `(to_user, status, created_at)`. There is no `mutual_waiting` flag in this revision: because a like can only ever be sent to someone who is currently `available` (section 2.2), by the time both people have liked each other, both were available at like-send time; the only remaining race is the one closed in `decide_feed_item()` and `respond_to_like()` by re-checking availability immediately before forming the connection.
+Unique `(from_user, to_user)`. Index `(to_user, status, created_at)`. A like can only ever be created when both parties are available (section 7.6). When either party's last open slot fills, every other `pending` like involving them, in either direction, is set to `expired` in the same transaction that forms the connection (section 7.7); this reuses the existing `expired` status rather than adding a new one, since no user-facing distinction is ever drawn between a like that aged out and one that was cleared by its recipient or sender entering Focused.
 
 **connections**
 
@@ -413,11 +441,12 @@ Unique `(from_user, to_user)`. Index `(to_user, status, created_at)`. There is n
 | ended_at | timestamptz | |
 | ended_by | uuid | nullable |
 | end_reason | end_reason | nullable |
-| end_note | text | up to 300 chars, nullable |
 | last_message_at | timestamptz | updated by every message, human or system |
-| last_human_message_at | timestamptz | updated only by human-authored messages; system messages (nudges, end notes shown as system messages) never touch this |
+| last_human_message_at | timestamptz | updated only by human-authored messages; system messages never touch this |
 | last_human_sender_id | uuid | who sent the last human message; used only to attribute a fade internally, never shown to users |
 | nudge_sent_at | timestamptz | |
+
+There is no `end_note` column. The closing note exists only as a system message in `messages`, which is the single source of truth and follows the same 30-day post-end retention as every other message in that connection, closing the contradiction in an earlier draft where the note was kept forever on the row while also being described as purged after 30 days in the chat.
 
 Partial unique index on `(user_a, user_b) WHERE status = 'active'`. Index on `(user_a, status)` and `(user_b, status)`.
 
@@ -433,25 +462,30 @@ id bigint identity PK, connection_id FK, sender_id FK (nullable for system messa
 
 id, reporter_id, reported_id, connection_id (nullable), message_id (nullable), reason, details (up to 1000), created_at, status, reviewed_by, reviewed_at, action (text). Index on `(status, created_at)`.
 
-**user_abuse_signals** (renamed from the 2026-09-08 draft's `user_stats`; admin and function access only, never user-selectable, not even the owner's own row)
+**user_abuse_signals** (admin-only; never user-selectable, not even the owner's own row)
 
-profile_id PK, connections_ended int, connections_ended_with_note int, connections_faded_as_non_responder int (incremented only for the party identified by `last_human_sender_id` logic as the one who went quiet after the other's last human message, or for both if neither ever sent a human message), reports_received int, updated_at. Written only by functions and the inactivity job. Used exclusively to surface repeat-ghosting or abuse patterns to admins; never rendered to any user, and never contributes to matching or ordering. This directly replaces the public "accountability signal" removed in this revision.
+profile_id PK, connections_ended int, connections_ended_with_note int, connections_faded_as_non_responder int, reports_received int, updated_at. Written only by functions and the inactivity job. Used exclusively to surface repeat-ghosting or abuse patterns to admins; never rendered to any user, and never contributes to matching or ordering.
 
 **user_daily**
 
 `(user_id, day)` PK, feed_served smallint, waiting_responses smallint, messages_sent int, reports_filed smallint, photo_uploads smallint, verification_submissions smallint. Written only by functions and triggers.
 
-**consents**
+**consent_events** (append-only; replaces the single-row `consents` table from the first draft, which could not represent re-accepting a new policy version because its primary key would collide)
 
-`(profile_id, kind)` PK, version text, accepted_at. A profile cannot leave `onboarding` until `terms`, `privacy`, and `sensitive_data` all exist at their current versions. `genotype_data` is separate and only required if `health_section_enabled` is set true; it is never implied by the other three and never implied by any heritage answer.
+| Column | Type | Notes |
+|---|---|---|
+| id | bigint identity PK | |
+| profile_id | uuid FK | |
+| kind | consent_kind | |
+| version | text | |
+| action | consent_action | `accepted` or `withdrawn` |
+| occurred_at | timestamptz | |
+
+No `UPDATE` or `DELETE` policy for anyone, ever, matching `admin_audit`'s pattern. Current state for a given kind is derived as the most recent event; a profile cannot leave `onboarding` until the most recent event for `terms`, `privacy`, and `sensitive_data` is `accepted` at the current required version. `genotype_data` is separate and only required if `health_section_enabled` is set true; it is never implied by the other three and never implied by any heritage answer.
 
 **admins**
 
 user_id PK, added_at, added_by. Seeded by migration with your user id after first sign-in. Only editable through SQL migration, never through the app.
-
-**admin_mfa_status** (view, not a table)
-
-A `SECURITY DEFINER` function `is_admin_mfa(uid uuid) returns boolean`, not a stored table: true when `is_admin(uid)` and the current request's JWT carries `aal = 'aal2'`. There is nothing to store; assurance level is a property of the current session, re-checked on every call.
 
 **admin_audit**
 
@@ -469,60 +503,63 @@ profile_id PK, requested_at, purge_after (requested_at + 7 days), purged_at.
 - Like counts, view counts, or any per-profile popularity or reputation number, visible or not-quite-visible.
 - Social handles. Detected ones are flagged, not stored separately.
 - Free-text bios. Prompts are shorter and easier to moderate.
+- A closing note anywhere but the message stream it belongs to.
+- Any pending like that survived a user's transition into Focused.
 
 ---
 
 ## 6. Authorization model
 
-### 6.1 Roles
+### 6.1 Roles and schemas
 
 - `anon`: can call nothing except Auth endpoints. No table or function grants.
-- `authenticated`: every signed-in user. All access goes through RLS policies and granted functions.
-- Admin: an `authenticated` user whose id is in `admins`. Checked by `is_admin(uid)` (STABLE, SECURITY DEFINER, reads `admins`) for identity, and `is_admin_mfa(uid)` (adds the aal2 check) for every actual access to admin data or functions.
-- `service_role` / secret key: used only by the upload-processing route and the cron purge route. Never in the browser. Referred to throughout as "the secret key" per Supabase's current key model.
+- `authenticated`: every signed-in user. All access goes through RLS policies and the `public`-schema functions listed in section 6.5. There is nothing to grant in `private`, because `private` is not on the project's exposed-schema list and is therefore unreachable via the Data API regardless of any grant.
+- Admin: an `authenticated` user whose id is in `admins`, checked by `private.is_admin(uid)` for identity, and `private.is_admin_mfa(uid)` (adds the aal2 check) for every actual access to admin data or functions. A thin `public.am_i_admin()` RPC exposes the aal2-inclusive check to the client purely so the Next.js server can decide whether to render the admin shell; it is a UX convenience, not a security boundary, since the real enforcement is in RLS and every admin function's own precondition.
+- `service_role` / secret key: used only by the upload-processing route and the cron purge route. Never in the browser.
 
 ### 6.2 The single visibility gate
 
 ```sql
-can_view_profile(viewer uuid, target uuid) returns boolean
+private.can_view_profile(viewer uuid, target uuid) returns boolean
 ```
 
 True when any of the following holds, and the pair is not blocked in either direction:
 
 1. `viewer = target`.
-2. `is_admin_mfa(viewer)`.
+2. `private.is_admin_mfa(viewer)`.
 3. An `active` connection exists between them.
-4. A `feed_items` row exists with `user_id = viewer`, `target_id = target`, `served_on = current_date`.
-5. A `likes` row exists with `from_user = target`, `to_user = viewer`, `status = 'pending'`, `surfaced_at IS NOT NULL`, not expired, and `available(target)` is true at read time (a like from someone who has since become focused elsewhere does not currently grant visibility, though the like itself is untouched and can surface again once they free up).
+4. A `feed_items` row exists with `user_id = viewer`, `target_id = target`, `served_on = current_date`, **and `private.available(target)` is true right now**. This closes the gap where an already-generated feed row kept a now-focused person visible; the check happens every time the function runs, not only at the moment the row was inserted.
+5. A `likes` row exists with `from_user = target`, `to_user = viewer`, `status = 'pending'`, `surfaced_at IS NOT NULL`, not expired, and `private.available(target)` is true at read time.
 
-For cases 3 to 5 the target must have status `active`. Ended connections do not grant visibility after 30 days (messages are purged by then; profile viewing ends immediately at `ended_at`). The function is `STABLE`, `SECURITY DEFINER`, `SET search_path = public, pg_temp`, and is the only predicate used by the `profiles`, `photos`, and Storage `photos` bucket read policies.
-
-Note the admin case now requires `is_admin_mfa`, not merely `is_admin`: an admin session that has not completed a second factor cannot view any profile beyond the generic public case, including through this gate.
+For cases 3 to 5 the target must have status `active`. Ended connections do not grant visibility after 30 days (messages are purged by then; profile viewing ends immediately at `ended_at`). The function is `STABLE`, `SECURITY DEFINER`, `SET search_path = ''` with every referenced object fully qualified (`public.profiles`, `public.connections`, `auth.uid()`), and is the only predicate used by the `profiles`, `photos`, and Storage `photos` bucket read policies.
 
 ### 6.3 Policies by table
 
+All tables are in `public`. Nothing below grants access to a `private`-schema object, because there is no client-facing operation that would ever need to.
+
 | Table | SELECT | INSERT | UPDATE | DELETE |
 |---|---|---|---|---|
-| profiles | `can_view_profile(auth.uid(), id)` | own row, id = auth.uid(), status must be `onboarding` | own row; `status`, `verified_at`, `age` cannot be changed by the user (trigger rejects) | none (deletion via function) |
+| profiles | `private.can_view_profile(auth.uid(), id)` | own row, id = auth.uid(), status must be `onboarding` | own row; `status`, `verified_at`, `age` cannot be changed by the user (trigger rejects) | none (deletion via function) |
 | profile_sensitive | own row | own row | own row | none |
 | profile_private | own row | own row | own row | none |
 | profile_answers | own row | own row | own row | none |
 | profile_heritage | own rows | own rows | own rows | own rows |
 | preferences | own row | own row | own row | none |
 | heritage_preferences | own rows | own rows | own rows | own rows |
-| photos | `can_view_profile(auth.uid(), profile_id)` | none (function only, via the processing route inserting with the user JWT) | none | own rows |
-| verifications | own rows or `is_admin_mfa` | own rows (via processing route) | none (admin via function) | none |
+| photos | `private.can_view_profile(auth.uid(), profile_id)` | none (function only, via the processing route inserting with the user JWT) | none | own rows |
+| verifications | own rows or `private.is_admin_mfa` | none (function only) | none (admin via function) | none |
+| upload_tickets | none for users | none for users | none for users | none |
 | feed_items | own rows (`user_id = auth.uid()`) | none (function) | none (function) | none |
 | likes | **none for users.** Not even own outgoing likes. All access via functions. Admin: none. | none | none | none |
 | connections | member (`auth.uid() IN (user_a, user_b)`) | none (function) | none (function) | none |
 | messages | member of the connection | member, connection active, `sender_id = auth.uid()` for non-system rows (trigger enforces the rest) | none | none |
 | blocks | own rows as blocker | own rows | none | none |
-| reports | own rows as reporter (without `action` and reviewer fields) or `is_admin_mfa` | own rows | admin via function (requires aal2) | none |
-| user_abuse_signals | `is_admin_mfa` only. Not even the profile owner. | none | none | none |
+| reports | own rows as reporter (without `action` and reviewer fields) or `private.is_admin_mfa` | own rows | admin via function (requires aal2) | none |
+| user_abuse_signals | `private.is_admin_mfa` only. Not even the profile owner. | none | none | none |
 | user_daily | own row | none | none | none |
-| consents | own rows | own rows | none | none |
-| admins | `is_admin_mfa` only | none | none | none |
-| admin_audit | `is_admin_mfa` only | none (function) | none | none |
+| consent_events | own rows | own rows (via function) | none, ever | none, ever |
+| admins | `private.is_admin_mfa` only | none | none | none |
+| admin_audit | `private.is_admin_mfa` only | none (function) | none | none |
 | deletion_requests | own row | via function | none | none |
 
 "None" means no policy exists, so the operation is denied for every role except the database owner used by functions and cron.
@@ -531,15 +568,26 @@ Note the admin case now requires `is_admin_mfa`, not merely `is_admin`: an admin
 
 | Bucket | Read | Write | Delete |
 |---|---|---|---|
-| incoming (private) | secret key only (processing route) | owner, via a short-lived signed upload URL issued by the ticket route; bucket-level 15 MB size ceiling and image-only MIME allowlist | secret key (processing route, immediately after use; cron safety net after 1 hour) |
-| photos (private) | `can_view_profile(auth.uid(), folder_owner)` | secret key only (processing route) | owner of folder, and secret key (account purge) |
-| verification (private) | `is_admin_mfa` only | secret key only (processing route) | secret key (review function triggers deletion; also the account purge route) |
+| incoming (private) | secret key only (processing route) | owner, via a short-lived Supabase signed upload URL issued alongside an `upload_tickets` row; bucket-level 15 MB size ceiling and image-only MIME allowlist; the Supabase URL itself is valid 2 hours by vendor design, and the paired `upload_tickets` row's own 5-minute expiry is what actually bounds the application's processing window | secret key (processing route, immediately after use; cron safety net after 1 hour) |
+| photos (private) | `private.can_view_profile(auth.uid(), folder_owner)` | secret key only (processing route) | owner of folder, and secret key (account purge) |
+| verification (private) | `private.is_admin_mfa` only | secret key only (processing route) | secret key (review function triggers deletion; also the account purge route) |
 
-Object paths are validated against `^{uuid}/{uuid}\.webp$` for `photos` and `verification`; `incoming` paths are validated against `^{uuid}/{uuid}$` with no extension trusted. Public URL access is disabled on all three buckets.
+Object paths for `incoming` are the ticket's own `object_path`, generated server-side; the client never chooses or later re-supplies a path. Public URL access is disabled on all three buckets.
 
-### 6.5 Function grants
+### 6.5 Function grants and the private schema
 
-Every function in section 7 is created with `SECURITY DEFINER`, `SET search_path = public, pg_temp`, `REVOKE ALL ON FUNCTION ... FROM PUBLIC`, and `GRANT EXECUTE TO authenticated`. Internal helpers prefixed `_` are not granted to anyone and are callable only from other functions. Every exposed function starts with:
+Every function a client can legitimately call lives in `public`, is created with `SECURITY DEFINER`, `SET search_path = ''` with every object fully qualified, `REVOKE ALL ON FUNCTION ... FROM PUBLIC`, and `GRANT EXECUTE TO authenticated` (admin functions additionally check `private.is_admin_mfa` in their first line). That list is exactly:
+
+```
+get_daily_feed, feed_state, decide_feed_item, next_waiting_like, respond_to_like,
+end_connection, set_capacity, block_user, report_user, request_account_deletion,
+create_upload_ticket, process_upload, record_consent, am_i_admin,
+admin_review_verification, admin_review_report, admin_ban_user, admin_reinstate_user
+```
+
+Every other function used by section 7, including `available`, `mutually_compatible`, `preference_score`, `can_view_profile`, `is_admin`, `is_admin_mfa`, `normalize_key`, `_send_like`, `_form_connection`, and `_purge_user`, lives in schema `private`. This is the actual fix for the exposure found in the second review: an earlier draft called these "internal" in prose while defining several of them without the underscore convention the draft itself claimed to enforce, and the enforcement mechanism (a grant) was never actually withheld from them. The `private` schema is never added to the project's list of exposed schemas (the Supabase default is `public` and `graphql_public`), so these functions cannot be reached through PostgREST at all, regardless of any `GRANT` statement. Grants inside `private` are still set narrowly as ordinary Postgres hygiene, but the control being relied on is schema exposure, not a grant that a future migration could accidentally loosen.
+
+Every exposed `public` function starts with:
 
 ```sql
 if auth.uid() is null then raise exception 'not_authenticated'; end if;
@@ -548,26 +596,26 @@ if auth.uid() is null then raise exception 'not_authenticated'; end if;
 and admin functions additionally start with:
 
 ```sql
-if not is_admin_mfa(auth.uid()) then raise exception 'forbidden'; end if;
+if not private.is_admin_mfa(auth.uid()) then raise exception 'forbidden'; end if;
 ```
 
-then checks the caller's profile status where relevant.
+then check the caller's profile status where relevant.
 
 ---
 
 ## 7. Core loop functions
 
-Each function lists preconditions, effects, invariants, concurrency handling, and the errors it raises. Error codes are short strings the UI maps to copy; no internal details leak.
+Each function lists its schema, preconditions, effects, invariants, concurrency handling, and the errors it raises. Error codes are short strings the UI maps to copy; no internal details leak. Functions marked `private` are unreachable by clients per section 6.5; functions marked `public` are the actual RPC surface.
 
-### 7.1 `available(p uuid) returns boolean` (internal, STABLE)
+### 7.1 `private.available(p uuid) returns boolean` (STABLE)
 
-`(select count(*) from connections where status = 'active' and (user_a = p or user_b = p)) < (select capacity from profiles where id = p)`.
+`(select count(*) from public.connections where status = 'active' and (user_a = p or user_b = p)) < (select capacity from public.profiles where id = p)`.
 
-This single function is the entire fix for the backlog problem raised in review: it is checked when building candidate pools (7.3), before sending a like (7.4 to 7.5), and before surfacing a waiting like (7.7). A focused profile fails this check everywhere it matters, so no new like can reach them and they never appear as a fresh candidate to anyone.
+This single function is checked, symmetrically, everywhere it matters: building candidate pools (7.4), re-reading an already-generated feed (7.4), before sending a like on both sides (7.5, 7.6), before forming a connection on both sides (7.7), and before surfacing or accepting a waiting like on both sides (7.8, 7.9). A focused profile fails this check everywhere, so no new like can reach them and they never appear as a fresh or stale candidate to anyone.
 
-### 7.2 `mutually_compatible(a uuid, b uuid) returns boolean` (internal, STABLE)
+### 7.2 `private.mutually_compatible(a uuid, b uuid) returns boolean` (STABLE)
 
-True when all of the following hold. This function is intentionally about compatibility rules only; availability is a separate, additional filter applied by callers (see 7.3, 7.5, 7.7), so that a temporarily-focused person's compatibility rules are still evaluated correctly the moment they free up.
+True when all of the following hold. This function is intentionally about compatibility rules only; availability is a separate, additional filter applied by every caller, so a temporarily-focused person's compatibility rules are still evaluated correctly the moment they free up.
 
 - Both profiles are `active`.
 - No block in either direction.
@@ -579,101 +627,120 @@ True when all of the following hold. This function is intentionally about compat
 
 `nice_to_have` and `important` never affect compatibility, only ordering.
 
-### 7.3 `preference_score(viewer uuid, target uuid) returns int` (internal, STABLE)
+### 7.3 `private.preference_score(viewer uuid, target uuid) returns int` (STABLE)
 
 Zero when the viewer's `use_heritage` is false. Otherwise the weighted sum of the viewer's satisfied heritage rules: `important` counts 3, `nice_to_have` counts 1, `must` counts 0 because it already filtered. Used for ordering only.
 
-### 7.4 `get_daily_feed() returns setof feed_card`
+### 7.4 `public.get_daily_feed() returns setof feed_card`
 
-`feed_card` is a composite of viewable profile columns, photo paths, a distance bucket text (`under 5 km`, `5 to 15 km`, `15 to 50 km`, `over 50 km`), and the feed item id and decision. There is no attention-state or accountability field on the card: every candidate returned is, by construction, currently available, and there is nothing else to display about them beyond their profile.
+`feed_card` is a composite of viewable profile columns, photo paths, a distance bucket text (`under 5 km`, `5 to 15 km`, `15 to 50 km`, `over 50 km`), and the feed item id and decision. There is no attention-state or accountability field on the card.
 
-- Preconditions: caller `active`; caller has an open slot (`available(caller)`). Otherwise returns an empty set and a reason code via a companion function `feed_state()` that returns `at_capacity`, `pending_review`, `waiting_list_pending`, or `ok`.
-- If `feed_items` for today exist, return them with decisions. Otherwise, inside one transaction:
+- Preconditions: caller `active`; `private.available(caller)`. Otherwise returns an empty set and a reason code via `feed_state()`.
+- If `feed_items` for today already exist, re-validate before returning: for every item with `decision = 'none'`, re-check `private.available(target_id)` (and, as a consistency measure, `private.mutually_compatible(caller, target_id)`, since a target's non-negotiables could also have changed since the morning). For any item that now fails, remove it from what is returned and attempt to backfill one replacement candidate using the same selection logic as fresh generation, inserting a new `feed_items` row for today, up to the original ceiling of 5. If no replacement is available, the caller simply sees fewer than 5 for that day. This closes the gap where a feed generated in the morning could still show a person who became focused later that day.
+- Otherwise, inside one transaction:
   1. Lock the caller's `user_daily` row for today (`INSERT ... ON CONFLICT DO UPDATE ... RETURNING` with `FOR UPDATE`) so two concurrent calls cannot both generate.
-  2. Candidates: `active` profiles `p` where `available(p)` and `mutually_compatible(caller, p)`, excluding: self; anyone with a `likes` row from the caller in the last 30 days (any status); anyone the caller passed in `feed_items` in the last 90 days; anyone with any `connections` row with the caller; anyone in `blocks` either way.
-  3. Order by `preference_score(caller, p) DESC`, distance ASC, `random()`.
+  2. Candidates: `active` profiles `p` where `private.available(p)` and `private.mutually_compatible(caller, p)`, excluding: self; anyone with a `likes` row from the caller in the last 30 days (any status); anyone the caller passed in `feed_items` in the last 90 days; anyone with any `connections` row with the caller; anyone in `blocks` either way.
+  3. Order by `private.preference_score(caller, p) DESC`, distance ASC, `random()`.
   4. Take 5. Insert `feed_items` with positions. Set `feed_served`.
-- Invariants: at most 5 items per user per day; every item passes `mutually_compatible` and `available` at generation time.
+- Invariants: at most 5 items per user per day; every item returned passes `mutually_compatible` and `available` at the moment it is returned, not merely at the moment it was first generated.
 - Errors: `not_active`, `at_capacity`.
 
 The waiting list has priority: the UI calls `next_waiting_like()` first and only shows discovery when it returns nothing.
 
-### 7.5 `decide_feed_item(item_id uuid, decision feed_decision) returns text`
+### 7.5 `public.decide_feed_item(item_id uuid, decision feed_decision) returns text`
 
 - Preconditions: item belongs to caller, `served_on = current_date`, `decision = 'none'`, decision argument is `like` or `pass`.
-- Effects: set decision and `decided_at`. If `like`: re-check `available(target)` (closes the generation-to-decision race); if now focused, return `target_focused` without creating a like row; otherwise call `_send_like(caller, target)` and return its outcome. If `pass`, return `passed`.
-- Errors: `not_found`, `already_decided`, `stale_item`, `target_focused`.
+- Effects: set decision and `decided_at`. If `like`: re-check `private.available(caller)` **and** `private.available(target)`; if either now fails, return `not_available` without creating a like row (this is the symmetric fix: an earlier draft only re-checked the target, which meant a caller who had just become focused through a separate connection could still like someone else off a stale card). Otherwise call `private._send_like(caller, target)` and return its outcome. If `pass`, return `passed`.
+- Errors: `not_found`, `already_decided`, `stale_item`, `not_available`.
 
-### 7.6 `_send_like(from_user uuid, to_user uuid) returns text` (internal)
+### 7.6 `private._send_like(from_user uuid, to_user uuid) returns text`
 
-- Preconditions: `mutually_compatible(from, to)`; `available(to_user)`; no existing like from→to.
-- If a `pending`, unexpired like exists to→from, and `available(from_user)` and `available(to_user)` both still hold: call `_form_connection(from, to)`; return its outcome (`connected`).
+- Preconditions: `private.mutually_compatible(from, to)`; `private.available(from_user)` **and** `private.available(to_user)`, both re-checked here as the last check before this function's own writes, independent of whatever the caller already checked.
+- If a `pending`, unexpired like exists to→from: call `private._form_connection(from, to)`; return its outcome (`connected`).
 - Else insert like `(from, to, pending, expires_at = now() + 30 days)` and return `liked`.
 - Invariant: a user never learns whether the other person had already liked them unless a connection forms.
 
-### 7.7 `_form_connection(x uuid, y uuid) returns text` (internal)
+### 7.7 `private._form_connection(x uuid, y uuid) returns text`
 
 1. Order the pair: `a = least(x, y)`, `b = greatest(x, y)`.
-2. `SELECT ... FROM profiles WHERE id IN (a, b) ORDER BY id FOR UPDATE` (deterministic lock order prevents deadlocks).
-3. Recount active connections for each under the lock and confirm both are still `available`. If not, raise `target_focused` (caller translates to a graceful message; this should be rare given the checks in 7.5 to 7.6, and exists as the final authority, not the only one).
-4. Insert `connections (a, b, active)`, set both like rows to `connected`, return `connected`.
-- Invariant: after commit, `active_connections(u) <= capacity(u)` for every user, enforced by the lock and the recount under it.
+2. `SELECT ... FROM public.profiles WHERE id IN (a, b) ORDER BY id FOR UPDATE` (deterministic lock order prevents deadlocks).
+3. Recount active connections for each under the lock and confirm both are still available. If not, raise `not_available`.
+4. Insert `connections (a, b, active)`, set both like rows to `connected`.
+5. **For each of `a` and `b`, if `private.available(that user)` is now false** (this connection consumed their last open slot): update every other `pending` like involving that user, in either direction, to `expired`. A user with remaining capacity (2 or 3, still available after this connection) keeps their other pending likes untouched, since they are still open to new connections in the normal sense.
+6. Return `connected`.
+- Invariant: after commit, `active_connections(u) <= capacity(u)` for every user, and no user who just entered Focused has any surviving pending like.
 
-### 7.8 `next_waiting_like() returns feed_card`
+### 7.8 `public.next_waiting_like() returns feed_card`
 
-- Preconditions: caller `active` and `available(caller)`.
-- Select one `likes` row where `to_user = caller`, `status = 'pending'`, not expired, no block, `mutually_compatible(caller, from_user)` still true, `available(from_user)` still true, ordered by `created_at ASC`, `LIMIT 1 FOR UPDATE SKIP LOCKED`.
-- Set `surfaced_at = now()` if null. Return the card for `from_user` (this is what makes their profile viewable).
+- Preconditions: caller `active` and `private.available(caller)`.
+- Select one `likes` row where `to_user = caller`, `status = 'pending'`, not expired, no block, `private.mutually_compatible(caller, from_user)` still true, `private.available(from_user)` still true, ordered by `created_at ASC`, `LIMIT 1 FOR UPDATE SKIP LOCKED`.
+- Set `surfaced_at = now()` if null. Return the card for `from_user`.
 - Returns nothing when the list is empty. Never returns a count.
 - Rate: at most 20 `respond_to_like` calls per day; the surfacing itself is not limited because it returns the same row until answered.
 
-### 7.9 `respond_to_like(like_id uuid, accept boolean) returns text`
+### 7.9 `public.respond_to_like(like_id uuid, accept boolean) returns text`
 
-- Preconditions: like `to_user = caller`, `pending`, `surfaced_at IS NOT NULL`, not expired.
+- Preconditions: like `to_user = caller`, `pending`, `surfaced_at IS NOT NULL`, not expired, `private.available(caller)` re-checked at call time, not only at the time it was surfaced.
 - If not accept: `status = 'declined'`, `responded_at = now()`. The liker is never notified and never learns this. Return `passed`.
-- If accept: increment `waiting_responses`; re-check `available(from_user)`; if still available, call `_form_connection(caller, from_user)` and return `connected`; if the sender has since become focused elsewhere, return `target_focused` and leave the like pending (it can surface again later if the sender frees up).
-- Errors: `not_found`, `not_surfaced`, `expired`, `at_capacity`, `target_focused`, `daily_limit`.
+- If accept: increment `waiting_responses`; re-check `private.available(from_user)`; if still available, call `private._form_connection(caller, from_user)` and return `connected`; if the sender has since become focused elsewhere, return `not_available` and leave the like pending (it can surface again later if the sender frees up and this like was not itself cleared by that sender's own Focused transition, per 7.7 step 5).
+- Errors: `not_found`, `not_surfaced`, `expired`, `at_capacity`, `not_available`, `daily_limit`.
 
-### 7.10 `end_connection(connection_id uuid, note text) returns void`
+### 7.10 `public.end_connection(connection_id uuid, note text) returns void`
 
 - Preconditions: caller is a member; status `active`; `note` trimmed length between 1 and 300, or one of the preset codes (`not_a_fit`, `met_someone`, `taking_a_break`, `no_spark`) which expand to fixed copy.
-- Effects: status `ended`, `ended_at`, `ended_by = caller`, `end_reason = ended_by_user`, `end_note`. Increment caller's `connections_ended` and `connections_ended_with_note` in `user_abuse_signals` (admin-only signal, never shown to either user). Insert a system message (`is_system = true`, does not update `last_human_message_at`) in the chat with the note so the other person sees it in context. Both users become `available` again immediately if their count drops below their capacity.
-- The ended connection stays readable by both members for 30 days (profile view ends immediately; chat history stays), then messages are purged.
+- Effects: status `ended`, `ended_at`, `ended_by = caller`, `end_reason = ended_by_user`. Increment caller's `connections_ended` and `connections_ended_with_note` in `user_abuse_signals`. Insert a system message (`is_system = true`, does not update `last_human_message_at`) in the chat containing the note; this message is the only copy of the note that ever exists, and it is purged with the rest of the connection's messages 30 days after `ended_at`. Both users become `available` again immediately if their count drops below their capacity.
 
-### 7.11 `set_capacity(n smallint) returns void`
+### 7.11 `public.set_capacity(n smallint) returns void`
 
 - Preconditions: 1..3.
-- Effects: update `capacity`. No connection is ever ended by this. If new capacity < active count, `available(caller)` is false until the count drops, exactly as the general definition already implies.
+- Effects: update `capacity`. No connection is ever ended by this, and no pending like is cleared by this alone; clearing only happens on the transition into Focused via `_form_connection`, never on a capacity change by itself.
 
-### 7.12 `block_user(target uuid) returns void`
+### 7.12 `public.block_user(target uuid) returns void`
 
-- Insert into `blocks`. End any active connection between them with `end_reason = blocked`, no note, no `user_abuse_signals` change for the blocker. Set every like between them to `declined`. Delete feed items between them. The blocked person sees the connection as "ended" with no note and cannot tell it was a block.
+- Insert into `blocks`. End any active connection between them with `end_reason = blocked`, no `user_abuse_signals` change for the blocker. Set every like between them to `declined`. Delete feed items between them. The blocked person sees the connection as "ended" and cannot tell it was a block.
 
-### 7.13 `report_user(target uuid, reason report_reason, details text, connection_id uuid, message_id uuid) returns void`
+### 7.13 `public.report_user(target uuid, reason report_reason, details text, connection_id uuid, message_id uuid) returns void`
 
 - Preconditions: target is or was viewable to the caller (connection, feed, or surfaced like, including within the last 30 days). Max 10 per day.
-- Effects: insert report; increment target's `reports_received` in `user_abuse_signals`. Reports do not block; the UI offers Block alongside Report.
+- Effects: insert report; increment target's `reports_received` in `user_abuse_signals`.
 
-### 7.14 `request_account_deletion() returns void`
+### 7.14 `public.request_account_deletion() returns void`
 
-- Immediate effects: status `deleted`; end all active connections with `end_reason = account_deleted` (partner sees "This person left the app"); decline all likes both ways; delete feed items; anonymise `messages.sender_id` display via a `deleted_at` on the profile (the partner still sees the conversation for 30 days with "Deleted user"); insert `deletion_requests` with `purge_after = now() + 7 days`.
-- Deferred purge (section 10): delete Storage objects (across all three buckets for this user), then all rows for the user across every table except `reports` where the user is `reported_id` (kept, with the reporter's id, for 12 months for safety and legal reasons) and `admin_audit`.
+- Immediate effects: status `deleted`; end all active connections with `end_reason = account_deleted`; decline all likes both ways; delete feed items; anonymise `messages.sender_id` display via a `deleted_at` on the profile; insert `deletion_requests` with `purge_after = now() + 7 days`.
+- Deferred purge (section 10): delete Storage objects across all three buckets for this user, then all rows for the user across every table except `reports` where the user is `reported_id` (kept for 12 months) and `admin_audit`.
 
 ### 7.15 Admin functions
 
-`admin_review_verification(id, decision, note)`, `admin_review_report(id, status, action, note)`, `admin_ban_user(profile_id, reason)`, `admin_reinstate_user(profile_id, reason)`. Each: `is_admin_mfa(auth.uid())` or `forbidden`; write `admin_audit` first; then act. Ban: status `banned`, end connections with `end_reason = banned`, decline likes, delete feed items. Banned users remain in `auth.users` so the email cannot register again; sign-in succeeds but every screen shows the ban notice.
+`admin_review_verification(id, decision, note)`, `admin_review_report(id, status, action, note)`, `admin_ban_user(profile_id, reason)`, `admin_reinstate_user(profile_id, reason)`. Each: `private.is_admin_mfa(auth.uid())` or `forbidden`; write `admin_audit` first; then act.
 
-### 7.16 Scheduled jobs (pg_cron unless noted)
+### 7.16 `public.create_upload_ticket(kind upload_kind, position smallint, verification_id uuid) returns jsonb`
+
+- Preconditions: for `kind = 'photo'`, `position` between 1 and 6; for `kind = 'selfie'`, `verification_id` must reference a row owned by the caller with `decision IS NULL`. Rate-limited alongside the existing photo and verification daily caps (section 9.4).
+- Effects: insert an `upload_tickets` row with a server-generated `object_path` under `incoming/{caller}/{ticketId}` and `expires_at = now() + 5 minutes`; request a Supabase signed upload URL for that path (which will itself be valid 2 hours, a vendor-fixed value this function does not control and does not rely on for its own security guarantee). Return `{ ticketId, uploadUrl }`.
+
+### 7.17 `public.process_upload(ticket_id uuid) returns jsonb`
+
+- Preconditions: ticket exists, `user_id = auth.uid()`, `used_at IS NULL`, `expires_at > now()`. This is the only input the client provides; the object path, kind, position, and any linked verification are all read from the ticket row, never accepted as separate client-supplied parameters, closing the IDOR surface an earlier draft left open by accepting an arbitrary `objectPath`.
+- Effects: (performed by the calling route using the secret key for the storage operations, but gated by this function's row lock and check under the user's own JWT) download the object at `ticket.object_path`; sniff real file type; decode behind a maximum-pixel-count guard; strip metadata; resize; re-encode as WebP; write to the canonical destination path derived from `ticket.kind`, `caller`, and either a newly generated photo id or `ticket.verification_id`; upsert the corresponding `photos` or `verifications` row; set `used_at = now()`; delete the `incoming` object.
+- Errors: `ticket_not_found`, `ticket_expired`, `ticket_used`, `not_an_image`, `image_too_large`.
+
+### 7.18 `public.record_consent(kind consent_kind, version text, action consent_action) returns void`
+
+- Preconditions: `kind = 'genotype_data'` may only be `accepted` if `profile_answers.health_section_enabled` is being turned on in the same user flow (checked by the calling server action, not enforced here, since the ordering of "open the section" versus "accept its consent" is a UI concern; the function itself only ever appends the event the caller asked it to append).
+- Effects: insert one row into `consent_events`. Never updates or deletes an existing row.
+
+### 7.19 Scheduled jobs (pg_cron unless noted)
 
 | Job | Schedule | Effect |
 |---|---|---|
 | expire_likes | hourly | `pending` likes past `expires_at` become `expired` |
 | refresh_ages | daily 03:00 | recompute `profiles.age` from `birth_date` |
-| connection_inactivity | daily 04:00 | active connections where `last_human_message_at` (or `created_at` if never set) is more than 14 days ago and `nudge_sent_at` is null: insert a system "Still here?" message and set `nudge_sent_at` (this does not touch `last_human_message_at`). Those with `nudge_sent_at` older than 3 days and still no human message since: end with `faded`; increment `connections_faded_as_non_responder` in `user_abuse_signals` for whichever party is not `last_human_sender_id` (or for both if `last_human_sender_id` is null, meaning neither ever sent a human message) |
+| connection_inactivity | daily 04:00 | active connections where `last_human_message_at` (or `created_at` if never set) is more than 14 days ago and `nudge_sent_at` is null: insert a system "Still here?" message and set `nudge_sent_at` (does not touch `last_human_message_at`). Those with `nudge_sent_at` older than 3 days and still no human message since: end with `faded`; increment `connections_faded_as_non_responder` in `user_abuse_signals` for whichever party is not `last_human_sender_id` (or for both if `last_human_sender_id` is null) |
 | purge_feed_items | daily | delete `feed_items` older than 30 days |
-| purge_ended_messages | daily | delete messages of connections ended more than 30 days ago that have no open report |
-| purge_incoming | hourly | delete anything in the `incoming` bucket older than 1 hour (safety net for interrupted uploads) |
-| purge_deleted_accounts | daily, via Vercel Cron calling `/api/cron/purge` with a bearer secret | for each `deletion_requests` past `purge_after`: delete Storage objects across all buckets with the secret key, then call `_purge_user(profile_id)` |
+| purge_ended_messages | daily | delete messages of connections ended more than 30 days ago that have no open report; this now includes the closing-note system message, which has no separate retention rule anymore |
+| purge_incoming | hourly | delete anything in the `incoming` bucket older than 1 hour |
+| purge_upload_tickets | daily | delete `upload_tickets` rows that are used, or more than 24 hours past `expires_at` unused |
+| purge_deleted_accounts | daily, via Vercel Cron calling `/api/cron/purge` with a bearer secret | for each `deletion_requests` past `purge_after`: delete Storage objects across all buckets with the secret key, then call `private._purge_user(profile_id)` |
 | purge_verification_selfies | daily, same route | delete Storage objects for verifications decided more than 1 day ago and null `selfie_path` |
 
 ---
@@ -684,10 +751,10 @@ The waiting list has priority: the UI calls `next_waiting_like()` first and only
 
 Seeking, faith, heritage, genotype, and politics are special-category data under GDPR-style regimes and treated that way regardless of jurisdiction:
 
-- Collected only with explicit, versioned consent, in two tiers: `sensitive_data` (seeking, faith, heritage, politics) is required to leave onboarding; `genotype_data` is entirely separate, required only if the user opens the health section, and is never implied by heritage answers or by the general sensitive-data consent. Washington's My Health My Data Act and GDPR-style regimes both treat genetic data as its own protected category, and the consent model reflects that split rather than bundling it in.
-- Stored in owner-only tables (`profile_sensitive`, `profile_answers`, `profile_heritage`). Other users never select them directly; they receive only the derived compatibility result and the display-only fields the user marked viewable, through a function.
+- Collected only with explicit, versioned consent, recorded as append-only events (section 5.2) in two tiers: `sensitive_data` (seeking, faith, heritage, politics) is required to leave onboarding; `genotype_data` is entirely separate, required only if the user opens the health section, and is never implied by heritage answers or by the general sensitive-data consent. Washington's My Health My Data Act and GDPR-style regimes both treat genetic data as its own protected category, and the consent model reflects that split rather than bundling it in.
+- Stored in owner-only tables (`profile_sensitive`, `profile_answers`, `profile_heritage`). Other users never select them directly; they receive only the derived compatibility result and the display-only fields the user marked viewable, through a `private`-schema function that a client cannot call directly.
 - Never used for ranking except the user's own `nice_to_have`/`important` heritage rules.
-- Deleted with the account, and individually clearable at any time. The health section can be turned off independently, which stops genotype from being used in matching immediately, without needing to delete the account.
+- Deleted with the account, and individually clearable at any time. Withdrawing consent is itself an event (`action = 'withdrawn'`), not a deletion of history, so the record shows what was true when.
 
 ### 8.2 Location
 
@@ -697,35 +764,36 @@ Seeking, faith, heritage, genotype, and politics are special-category data under
 
 ### 8.3 Photos
 
-- The original uploaded bytes are held in the private `incoming` bucket only for the seconds between upload and processing, then deleted; a cron job removes anything left behind within an hour as a safety net. This replaces the earlier, less accurate claim that originals are "never stored."
+- The original uploaded bytes are held in the private `incoming` bucket only for the seconds between upload and processing, then deleted; a cron job removes anything left behind within an hour as a safety net.
 - Processing strips EXIF, including GPS and device data, before the processed copy is written to `photos` or `verification`.
-- Buckets are private. Reads require a JWT and pass through `can_view_profile()`. There is no public URL.
-- Verification selfies are readable by admins with an aal2 session only and deleted within a day of the decision. The decision, reviewer, and timestamp are kept.
+- Buckets are private. Reads require a JWT and pass through `private.can_view_profile()`. There is no public URL.
+- Verification selfies are readable by admins with an aal2 session only and deleted within a day of the decision.
 - Screenshots cannot be prevented on the web. The privacy policy says so plainly.
 
 ### 8.4 Messages and notes
 
 - Readable only by the two members and, for a specific reported message, by an admin reviewing that report.
-- Purged 30 days after a connection ends unless a report references the connection.
-- Closing notes are part of the message stream (as a system message) and follow the same rules.
+- Purged 30 days after a connection ends unless a report references the connection. The closing note is a message like any other and is purged on the same schedule; there is no separate, longer-lived copy of it anywhere in the schema.
 
 ### 8.5 Retention schedule
 
 | Data | Kept until |
 |---|---|
 | Feed items | 30 days |
-| Pending likes | 30 days, then `expired`; expired and declined rows purged after 90 days |
-| Messages of ended connections | 30 days after end, unless reported |
+| Pending likes | 30 days, then `expired`; expired and declined rows purged after 90 days; a like can also become `expired` immediately if its sender or recipient enters Focused (section 7.7) |
+| Messages of ended connections, including the closing note | 30 days after end, unless reported |
 | Raw upload originals (`incoming` bucket) | Seconds, deleted immediately after processing; 1 hour hard ceiling via cron |
+| Upload tickets | Used immediately, or purged 24 hours after expiry if unused |
 | Verification selfies | 1 day after decision |
 | Reports | 12 months after review |
-| Admin audit | indefinitely (no personal content, ids only) |
-| Deleted accounts | purged 7 days after request |
-| Everything else | life of the account |
+| Consent events | Indefinitely, as a historical record; this is the point of an append-only log |
+| Admin audit | Indefinitely (no personal content, ids only) |
+| Deleted accounts | Purged 7 days after request |
+| Everything else | Life of the account |
 
 ### 8.6 What admins can see
 
-Profiles (viewable columns), verification selfies during review, reports with the reported message if one is attached, user status, `user_abuse_signals` for pattern detection, and audit history, all gated behind `is_admin_mfa`. Admins cannot read likes, cannot read chats except a reported message, and cannot see sensitive-category answers unless a report requires it (and then only through a function that logs the access).
+Profiles (viewable columns), verification selfies during review, reports with the reported message if one is attached, user status, `user_abuse_signals` for pattern detection, and audit history, all gated behind `private.is_admin_mfa`. Admins cannot read likes, cannot read chats except a reported message, and cannot see sensitive-category answers unless a report requires it.
 
 ### 8.7 Logging
 
@@ -742,7 +810,7 @@ Profiles (viewable columns), verification selfies during review, reports with th
 - Supabase Auth with two providers only: email OTP (6-digit code, 10-minute expiry, single use) and Google OAuth with PKCE. Magic links are disabled because they break in installed PWAs and are phishable.
 - Cloudflare Turnstile is required on the OTP request and on sign-up. Supabase Auth verifies the token server-side.
 - Sessions live in HttpOnly, Secure, SameSite=Lax cookies managed by `@supabase/ssr`. Access token lifetime 1 hour, refresh token rotation on, reuse detection on.
-- **Admin accounts require both a linked Google provider and an enrolled TOTP factor.** Google sign-in alone is not treated as sufficient, because a Google login does not guarantee that account has its own 2FA enabled. On first admin sign-in without an enrolled factor, every admin screen shows only "Set up two-factor authentication to continue" with Supabase's TOTP enrollment flow; nothing admin-shaped is reachable until the session reports `aal = 'aal2'`. `is_admin_mfa()` is the single check used everywhere in sections 6 and 7 for admin access; plain `is_admin()` is used only internally where an aal2 check would be redundant (e.g., inside a function already gated by `is_admin_mfa` at its entry).
+- Admin accounts require both a linked Google provider and an enrolled TOTP factor. On first admin sign-in without an enrolled factor, every admin screen shows only "Set up two-factor authentication to continue"; nothing admin-shaped is reachable until the session reports `aal = 'aal2'`.
 - Sign-out revokes the refresh token server-side.
 - Email change requires confirmation from both old and new addresses (Supabase "secure email change").
 
@@ -750,19 +818,19 @@ Profiles (viewable columns), verification selfies during review, reports with th
 
 - Every server action and route handler validates input with a zod schema. Unknown keys are stripped. Strings are trimmed and length-limited to the same limits the database enforces.
 - The database is the last line: CHECK constraints on lengths and ranges, enums for categorical fields, triggers for cross-row rules (photo count, heritage value count, prompt shape).
-- Heritage values and faith labels are normalised with a single SQL function `normalize_key(text)` used everywhere, so "Yorùbá", "yoruba", and "YORUBA " match.
+- Heritage values and faith labels are normalised with a single SQL function `private.normalize_key(text)` used everywhere, so "Yorùbá", "yoruba", and "YORUBA " match.
 - User text is rendered as text. No markdown, no HTML, no link unfurling in v1. URLs in messages are shown as plain text, not anchors.
 
 ### 9.3 Browser hardening
 
-Headers set in `proxy.ts` (Next.js 16's replacement for `middleware.ts`; same runtime concept, renamed because "middleware" was routinely confused with Express-style middleware when it is really a boundary in front of the app) for every response:
+Headers set in `proxy.ts` (Next.js 16's replacement for `middleware.ts`) for every response:
 
-- `Content-Security-Policy`: `default-src 'self'; script-src 'self' 'nonce-{per-request}'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://{project}.supabase.co; connect-src 'self' https://{project}.supabase.co wss://{project}.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests`
+- `Content-Security-Policy`: `default-src 'self'; script-src 'self' 'nonce-{per-request}' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://{project}.supabase.co; connect-src 'self' https://{project}.supabase.co wss://{project}.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests`. Confirmed against Cloudflare's Turnstile documentation, which requires the literal `challenges.cloudflare.com` origin in both `script-src` and `frame-src`, not merely a nonce; the same per-request nonce is also set as an attribute on Turnstile's own script tag, per Cloudflare's documented nonce-propagation approach, so the widget's own dynamically loaded resources inherit it.
 - `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
 - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`
 - `Permissions-Policy: camera=(self), geolocation=(self), microphone=(), payment=()`
 - `style-src 'unsafe-inline'` is a known compromise for Tailwind-generated inline styles in Next.js and is revisited in the red-team pass.
-- A per-request nonce forces dynamic rendering on every page that uses it, which is a real performance cost against Next.js's static and partial-prerendering paths. This trade-off is accepted deliberately for the CSP protection it buys; it is not an oversight, and it is a candidate for reconsideration if a specific page's dynamic-rendering cost turns out to matter (a marketing or terms page with no user data could reasonably drop the nonce and use a stricter static CSP instead).
+- A per-request nonce forces dynamic rendering on every page that uses it. Accepted deliberately; a marketing or terms page with no user data could reasonably drop the nonce and use a stricter static CSP instead.
 
 ### 9.4 Rate limits
 
@@ -774,7 +842,7 @@ Enforced in the database unless stated, because the database cannot be bypassed.
 | Waiting-list responses | 20 per day | `respond_to_like()` |
 | Messages | 30 per minute per connection, 500 per day | trigger on `messages` |
 | Reports | 10 per day | `report_user()` |
-| Photo/selfie uploads | 20 per day, 15 MB each at the `incoming` bucket ceiling | upload ticket route plus `user_daily` |
+| Photo/selfie uploads | 20 per day, 15 MB each at the `incoming` bucket ceiling | `create_upload_ticket()` plus `user_daily` |
 | Verification submissions | 3 per day | trigger on `verifications` |
 | Profile edits | 60 per hour | trigger on `profiles` |
 | OTP requests | Supabase defaults (per email and per IP) plus Turnstile | Supabase Auth |
@@ -783,17 +851,17 @@ Enforced in the database unless stated, because the database cannot be bypassed.
 ### 9.5 Abuse controls
 
 - **Fake profiles:** human selfie review before visibility; at least two photos; a face required in the first (checked by the reviewer, not by software, in v1).
-- **Off-platform pushing and social handles:** a trigger scans prompts and messages for `@handle` patterns, "instagram", "ig", "snap", "whatsapp", "telegram", phone-number shapes, and payment app names. Prompts with hits set `review_flags.social_handle` and the profile is held for review. Messages with hits are delivered but the count is visible to the admin on the reporter's report. Nothing is silently dropped.
-- **Duplicate accounts:** one account per email; Google accounts are their own email. Nothing stronger in v1, by choice: device fingerprinting is a privacy cost the product does not want to pay.
+- **Off-platform pushing and social handles:** a trigger scans prompts and messages for handle patterns, platform names, phone-number shapes, and payment app names. Prompts with hits set `review_flags.social_handle` and the profile is held for review. Messages with hits are delivered but flagged for the admin on any related report.
+- **Duplicate accounts:** one account per email; Google accounts are their own email. Nothing stronger in v1, by choice.
 - **Scraping:** 5 profiles a day, no list endpoints, no public photo URLs, human verification, CAPTCHA on sign-up.
 - **Harassment:** block is permanent and invisible to the blocked person; reports carry the exact message; ban keeps the email out.
 - **Underage:** date of birth with server-side age check; `underage` report reason routes to immediate ban on confirmation.
-- **Romance scam patterns:** reason `scam` on reports; `user_abuse_signals.reports_received` gives admins a repeat-offender view across all time, without exposing any number to users.
+- **Romance scam patterns:** `user_abuse_signals.reports_received` gives admins a repeat-offender view across all time, without exposing any number to users.
 
 ### 9.6 Admin surface
 
-- `/admin` is a route group with a server-side `is_admin_mfa()` check in its layout and again in every action. There is no client-only gate, and no path that treats a Google-linked, non-MFA session as sufficient.
-- Admin pages render lists of verifications, reports, and `user_abuse_signals` flags only. Profile detail is the same viewable card users see, plus status and report history.
+- `/admin` is a route group with a server-side `private.is_admin_mfa()` check (via `am_i_admin()` for the UI gate, and directly in every mutating function) in its layout and again in every action.
+- Admin pages render lists of verifications, reports, and `user_abuse_signals` flags only.
 - All mutations are RPCs that write `admin_audit` in the same transaction.
 - No admin function can read `likes` or arbitrary `messages`.
 
@@ -802,26 +870,26 @@ Enforced in the database unless stated, because the database cannot be bypassed.
 | Secret | Lives in | Used by |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Vercel env, `.env.local` | browser and server |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Vercel env, `.env.local` | browser and server (public by design; RLS is the protection; replaces the legacy anon key ahead of Supabase's deprecation) |
-| `SUPABASE_SECRET_KEY` | Vercel env (server only), `.env.local` | upload-processing route, cron purge route (replaces the legacy service_role key; can be revoked and rotated in seconds without invalidating every user's session, unlike the old key) |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Vercel env, `.env.local` | browser and server (public by design; RLS is the protection) |
+| `SUPABASE_SECRET_KEY` | Vercel env (server only), `.env.local` | upload-processing route, cron purge route |
 | `CRON_SECRET` | Vercel env | cron route bearer check |
 | `TURNSTILE_SECRET_KEY` | Supabase Auth settings | Supabase |
 | Google OAuth client id and secret | Supabase Auth settings | Supabase |
 | SMTP credentials | Supabase Auth settings | Supabase |
 
-`.env*` is gitignored. `.env.example` lists names only. CI fails if the built client bundle contains the `sb_secret_` prefix or the legacy string `service_role` (checked as a belt-and-braces measure even though the project is built on the new key model from day one). Rotation: any suspected leak rotates the key in the Supabase dashboard and redeploys; documented in section 10.
+`.env*` is gitignored. `.env.example` lists names only. CI fails if the built client bundle contains the `sb_secret_` prefix or the legacy string `service_role`. Rotation: any suspected leak rotates the key in the Supabase dashboard and redeploys.
 
 ### 9.8 Dependencies and build
 
 - Runtime dependencies kept to: `next` (16.x), `react`, `react-dom`, `@supabase/supabase-js`, `@supabase/ssr`, `zod`, `sharp`. UI components are copied into the repo (shadcn style), not installed as a runtime package.
 - `pnpm-lock.yaml` committed. `pnpm install --frozen-lockfile` in CI. Lifecycle scripts disabled (pnpm default).
 - Dependabot weekly. `pnpm audit --prod` in CI, failing on high or critical.
-- Vercel deploys from the `main` branch only, from the `Dating App/app` root directory. Pull request preview deployments point at an ephemeral, per-PR Supabase branch (section 10.1), never at the production project.
+- Vercel deploys from the `main` branch only, from the `Dating App/app` root directory. Pull request preview deployments point at an ephemeral, per-PR Supabase branch, never at the production project.
 
 ### 9.9 Error handling
 
 - Functions raise short codes. Server actions map codes to user copy and log the code with the user id. Unexpected errors return `unexpected` to the client and the full error to the server log.
-- No error path ever reveals whether a specific email is registered, whether a specific person liked you, whether a profile id exists, or a person's current available/focused state beyond what the product intentionally shows.
+- No error path ever reveals whether a specific email is registered, whether a specific person liked you, whether a profile id exists, or a person's current available/focused state beyond what the product intentionally shows. `not_available` is deliberately used for both "the target became focused" and "the caller became focused" so the two cannot be distinguished from the error alone.
 
 ---
 
@@ -835,23 +903,19 @@ Enforced in the database unless stated, because the database cannot be bypassed.
 | Staging (per pull request) | Ephemeral Supabase branch, created automatically by the Supabase GitHub integration when a PR opens, migrations applied automatically, destroyed when the PR closes or merges. Billed hourly at $0.01344/hour (about $0.32/day) only while the PR is open; confirmed against the live Supabase cost API for this organisation on 2026-09-09. | Vercel preview deployment for that PR, configured with that branch's URL and publishable key | UI and integration review with synthetic data only; never touches production data |
 | Production | Hosted Supabase project, Pro plan: $25/month base, which includes a $10/month compute credit covering one Micro instance, so the expected steady-state bill is $25/month at this scale; confirmed against the live Supabase cost API for this organisation on 2026-09-09 | Vercel production from `main` | real users |
 
-This replaces the 2026-09-08 draft's plan to point preview deployments at production "for UI only," which review correctly identified as a real risk: a preview build's mistake can mutate real data regardless of intent. Staging exists from before the first external beta, not after the app is successful enough to deserve one.
-
 ### 10.2 Migrations
 
-Every migration is written as either **expand** or **contract**, and the two follow different rules:
+Every migration is written as either **expand** or **contract**:
 
-- **Expand** migrations are additive and backward-compatible: new tables, new nullable or defaulted columns, new functions, new indexes. They are safe for the previous application version to run against unmodified. Expand migrations, and only expand migrations, run automatically: applied to a PR's ephemeral branch on open, and to production via CI on merge to `main`, immediately followed by the Vercel deploy that depends on them.
-- **Contract** migrations are destructive or narrowing: dropping or renaming a column or table, tightening a constraint, removing a function. They are never run automatically. A contract migration is written as its own pull request, labelled as such in the migration filename, and is applied to production manually, by a maintainer, only after confirming the application version that depended on the old shape is no longer live in Vercel's deployment history and the replacement has been stable for at least one full day. CI refuses to merge a PR that mixes a contract migration with application code in the same change.
+- **Expand** migrations are additive and backward-compatible. They run automatically: applied to a PR's ephemeral branch on open, and to production via CI on merge to `main`, immediately followed by the Vercel deploy that depends on them.
+- **Contract** migrations are destructive or narrowing and are never run automatically. A contract migration is written as its own pull request, labelled as such in the filename, and is applied to production manually, only after confirming the application version that depended on the old shape is no longer live and the replacement has been stable for at least one full day. CI refuses to merge a PR that mixes a contract migration with application code in the same change.
 
-This directly avoids the failure mode raised in review: migration succeeds, the paired Vercel deploy fails or lags, and the previous application version runs against a schema it cannot handle. With expand-only automatic migrations, the previous version keeps working against the expanded schema by construction, so the two deploys are no longer required to land within the same instant.
-
-- Seed data for local development lives in `supabase/seed.sql` and never contains real people.
+Seed data for local development lives in `supabase/seed.sql` and never contains real people.
 
 ### 10.3 Backups and restore
 
 - Hosted project: Supabase daily backups (7-day retention on the Pro tier). Point-in-time recovery is a paid add-on and is not enabled in v1.
-- Restore drill: once before launch, restore the latest backup into a fresh local stack and run the test suite against it. Document the steps in `docs/runbooks/restore.md`.
+- Restore drill: once before launch, restore the latest backup into a fresh local stack and run the test suite against it.
 - Storage objects are not in database backups. Photos are re-uploadable by users; the app tolerates a missing object by showing a placeholder.
 
 ### 10.4 Monitoring
@@ -862,8 +926,8 @@ This directly avoids the failure mode raised in review: migration succeeds, the 
 
 ### 10.5 Incident basics
 
-- Suspected key leak: rotate in Supabase, update Vercel env, redeploy, review audit and logs, note in `docs/runbooks/incidents.md`. The new secret-key model makes this materially faster than the old service_role key, since a secret key can be revoked without invalidating every signed-in user's session.
-- Suspected data exposure: pause sign-ups (feature flag in `app_settings` table), assess with the advisors and logs, fix, notify affected users by email with plain language, document.
+- Suspected key leak: rotate in Supabase, update Vercel env, redeploy, review audit and logs. A secret key can be revoked without invalidating every signed-in user's session, unlike the old service_role key.
+- Suspected data exposure: pause sign-ups (feature flag), assess with the advisors and logs, fix, notify affected users by email in plain language, document.
 
 ---
 
@@ -871,37 +935,39 @@ This directly avoids the failure mode raised in review: migration succeeds, the 
 
 ### 11.1 Database tests (pgTAP, run by `supabase test db`)
 
-For every table: a signed-in user can read and write exactly what section 6.3 allows and nothing else. Specifically:
-
 - User A cannot select any row from `likes`, including their own outgoing likes.
 - User A cannot select B's `profile_sensitive`, `profile_answers`, `profile_private`, `profile_heritage`, `preferences`, or `user_abuse_signals`, even A's own row of the last one.
-- User A cannot select B's `profiles` row or `photos` unless one of the five `can_view_profile` conditions holds; each condition has a positive and a negative test, including the specific case of a pending like from a sender who has since become focused (must not grant visibility).
-- User A cannot insert into `feed_items`, `likes`, `connections`, or `user_abuse_signals`.
+- User A cannot select B's `profiles` row or `photos` unless one of the five `can_view_profile` conditions holds; each condition has a positive and a negative test, including a pending like from a sender who has since become focused, and a feed item whose target has since become focused (must not grant visibility in either case).
+- User A cannot insert into `feed_items`, `likes`, `connections`, `user_abuse_signals`, or `upload_tickets`.
 - User A cannot update `profiles.status`, `verified_at`, or `capacity` outside `set_capacity()`.
 - A non-admin cannot execute any `admin_*` function; an admin without an aal2 session cannot execute any `admin_*` function or select `admins`, `admin_audit`, or `user_abuse_signals`; the same admin, after completing TOTP enrollment and a challenge in the test harness, can.
+- **Every function this document designates `private` is called directly through the REST endpoint (`POST /rest/v1/rpc/available`, `.../mutually_compatible`, `.../preference_score`, `.../can_view_profile`, `.../is_admin`, `.../is_admin_mfa`, `.../normalize_key`) with a valid user JWT and confirmed to return a schema-not-found style error, not a permission error and not a result.** A permission error would suggest the schema is reachable but merely denied by a grant, which is exactly the fragile state this revision moved away from.
 - Storage policies: A can read B's photo only under `can_view_profile`; nobody but an aal2 admin can read `verification` objects; nobody but the secret key can read `incoming` objects.
 
 ### 11.2 Function and invariant tests (Vitest against the local stack, using real JWTs for several test users)
 
-- Capacity: with capacity 1, a user who is in a connection gets `at_capacity` from `feed_state()` and an empty feed; `respond_to_like` and `decide_feed_item` raise `target_focused` when relevant.
-- **Focused users are excluded from candidate generation, not merely reordered.** With capacity 1, user A in an active connection: confirm A never appears in `get_daily_feed()` for any other user, and confirm that a like sent toward A by a third party through direct RPC calls with a stale feed reference is rejected with `target_focused` rather than silently queued.
-- Concurrency: 20 parallel `respond_to_like` calls from different likers against one user with capacity 1 produce exactly one `connected` and 19 `target_focused`; the recount trigger never fires more than once.
+- Capacity: with capacity 1, a user who is in a connection gets `at_capacity` from `feed_state()` and an empty feed; `respond_to_like` and `decide_feed_item` raise `not_available` when relevant.
+- **The exact race from the second review:** user A, capacity 1, is shown a feed while available. Two requests are then issued concurrently: request 1 forms a connection between A and B through the normal like flow; request 2, from A, calls `decide_feed_item('like')` against a different, already-served card C. Assert exactly one connection forms (A–B), and assert zero `likes` rows exist from A to C afterward, regardless of which request's database work happens to interleave first.
+- **Stale feed backfill:** user A's feed for today includes target T. T forms an unrelated connection that fills their capacity. A calls `get_daily_feed()` again the same day: assert T is no longer present, and if a compatible available replacement exists, assert a new card appears in T's place while the total for the day stays at 5.
+- **Clean slate on Focused:** user A, capacity 1, has three incoming pending likes and one outgoing pending like when a fourth party forms a mutual connection with A. Assert all three incoming likes and the one outgoing like are now `expired`, and assert none of them resurface even after A later ends that connection and becomes available again.
+- Concurrency: 20 parallel `respond_to_like` calls from different likers against one user with capacity 1 produce exactly one `connected` and 19 `not_available`.
 - Mutual pre-screen: a user whose `kids_must` excludes `dont_want` never sees a `dont_want` profile, and that profile never sees them either.
 - Heritage: with `use_heritage` on, `must` with keys `['yoruba']` matches a profile whose community values include "Yorùbá"; `important` outranks `nice_to_have` in feed order but neither changes membership; with `use_heritage` off, the same rules have no effect on either.
-- Waiting list: likes are surfaced one at a time, oldest first; a like from a sender who has since become focused is skipped and does not surface until that sender frees up or the like expires; declined likes never resurface.
-- Browse cap: the sixth candidate is never served; calling `get_daily_feed()` twice returns the same five.
-- End connection: frees both slots (confirmed by the freed party immediately appearing in a third party's feed within the same test); note appears as a system message; `user_abuse_signals` updates for the ender only, and is confirmed unreadable by either user via a direct select.
+- Waiting list: likes are surfaced one at a time, oldest first; a like from a sender who has since become focused is skipped; declined likes never resurface.
+- Browse cap: the sixth candidate is never served; calling `get_daily_feed()` twice returns the same five (or fewer, after a backfill miss).
+- End connection: frees both slots; the closing note appears only as a message and is confirmed absent from any `connections` column; `user_abuse_signals` updates for the ender only, and is confirmed unreadable by either user via a direct select.
 - Inactivity attribution: a connection where A sends the last human message and B never replies, after the nudge and fade window, increments `connections_faded_as_non_responder` for B only; a system nudge message does not reset `last_human_message_at`.
 - Block: ends the connection with no note, purges feed items and likes, and `can_view_profile` becomes false both ways.
 - Deletion: after `request_account_deletion()` plus the purge job, no rows remain for the user except retained reports and audit, and Storage is empty for that folder across all three buckets.
-- Upload pipeline: a file uploaded via a signed URL larger than the `incoming` bucket ceiling is rejected before it reaches the processing route; a non-image file with an image extension is rejected by byte-sniffing; a successfully processed image leaves no object behind in `incoming`; an interrupted upload (ticket issued, never processed) is removed by the hourly safety-net job within its window.
+- Upload ticket pipeline: `process_upload` rejects a ticket belonging to another user, an already-used ticket, and an expired ticket (at 5 minutes, well before the underlying Supabase URL's own 2-hour window closes), even though the Storage object itself would still be fetchable by the secret key; a file uploaded via the signed URL larger than the `incoming` bucket ceiling is rejected before it reaches the processing route; a non-image file with an image extension is rejected by byte-sniffing; a successfully processed image leaves no object behind in `incoming`.
+- Consent: a user can record a `sensitive_data` `accepted` event at version 1, then later a second `accepted` event at version 2, without any conflict; the derived current state reflects version 2; a `withdrawn` event is recorded without deleting the prior `accepted` event.
 
 ### 11.3 Application tests
 
 - Server actions: zod rejection of oversize and malformed input; error codes never contain SQL.
-- Upload routes: the ticket route never accepts a `kind` outside `photo`/`selfie`; the processing route rejects non-images by byte sniffing, rejects a decoded pixel count above the sanity ceiling before full decode, strips EXIF (assert no GPS tag in output), and writes to the correct path only.
+- Upload routes: the ticket route never accepts a `kind` outside `photo`/`selfie`; `processUpload` accepts only a ticket id and rejects any attempt to pass a storage path directly; the processing route rejects non-images by byte sniffing, rejects a decoded pixel count above the sanity ceiling before full decode, strips EXIF, and writes to a server-derived path only.
 - Playwright smoke: sign up with OTP (local inbucket), complete onboarding, get approved via the admin page (as an aal2-enrolled test admin), see a feed, like, form a connection with a second test user, chat over Realtime, end with a note, verify slot freed and the ended party immediately eligible to appear in a fresh feed.
-- Headers: a test fetches `/` and asserts every header in section 9.3, including the presence of a fresh nonce on each request.
+- Headers: a test fetches `/` and asserts every header in section 9.3, including a fresh nonce on each request and its presence on the Turnstile script tag on the sign-up page.
 - Bundle check: the client build contains no `sb_secret_`-prefixed string and no server-only env names.
 
 ### 11.4 Continuous integration (GitHub Actions on every pull request)
@@ -913,9 +979,9 @@ For every table: a signed-in user can read and write exactly what section 6.3 al
 5. `pnpm build`, bundle secret check
 6. Playwright smoke against the local build
 7. `pnpm audit --prod`
-8. Verify the PR contains no migration file tagged `contract` alongside application code changes (see section 10.2)
+8. Verify the PR contains no migration file tagged `contract` alongside application code changes
 
-Merge to `main` additionally runs `supabase db push` (expand migrations only) to production and lets Vercel deploy. A contract migration merge is a separate, manually-triggered production step, never part of this automatic path.
+Merge to `main` additionally runs `supabase db push` (expand migrations only) to production and lets Vercel deploy. A contract migration merge is a separate, manually-triggered production step.
 
 ---
 
@@ -929,21 +995,25 @@ Ordinary review for correctness, clarity, and adherence to this document. Any de
 
 ### 12.2 Red-team pass
 
-Adversarial, performed against the running local stack with raw HTTP calls and SQL, not through the UI. Checklist, extended as the code grows:
+Adversarial, performed against the running local stack with raw HTTP calls and SQL, not through the UI.
 
 - Call every RPC with another user's ids, stale ids, and random uuids.
+- **Attempt to call every function this document designates `private` directly through the REST endpoint and confirm the schema itself is unreachable, not merely permission-denied.**
 - Select from every table as a normal user; attempt to read likes, others' answers, others' sensitive fields, others' photos, verification selfies, and `user_abuse_signals` for any profile including your own.
-- Hit `get_daily_feed()` and `respond_to_like()` in parallel from many sessions; assert capacity, caps, and the available/focused candidate exclusion all hold.
-- Attempt to like a target through a replayed or forged feed-item id after that target has become focused; confirm `target_focused` and no queued state results.
+- Hit `get_daily_feed()` and `respond_to_like()` in parallel from many sessions; assert capacity, caps, and the available/focused candidate exclusion all hold, including the specific caller-side race from section 11.2.
+- Read back an already-generated feed after artificially forming a connection for one of its targets in a separate session; confirm the target disappears on the next read.
+- Force a user into Focused with several pending likes outstanding and confirm they are all cleared, not merely hidden.
+- Attempt `process_upload` with a fabricated or another user's ticket id, and with a raw object path where a ticket id is expected.
 - Fetch Storage objects by guessed path in all three buckets with a valid JWT.
 - Subscribe to Realtime on a connection you are not in.
 - Submit prompts and messages containing script tags, long unicode, right-to-left overrides, and social handles; verify rendering and flagging.
-- Attempt admin routes and admin RPCs as a normal user, and as an admin whose Google account is linked but has not completed TOTP enrollment; confirm both are refused identically to a non-admin.
+- Attempt admin routes and admin RPCs as a normal user, and as an admin whose Google account is linked but has not completed TOTP enrollment.
+- Load the sign-up page with the CSP active and confirm Turnstile actually renders and verifies, not just that the CSP report console is quiet.
 - Search the client bundle and network responses for secrets, emails, coordinates, and birth dates.
-- Request deletion and verify the purge is complete, including all three Storage buckets.
+- Request deletion and verify the purge is complete, including all three Storage buckets and the ticket table.
 - Review Supabase security advisors and fix every finding.
 - Try to learn whether a specific person liked you, or whether a specific person is currently focused, through timing, error messages, or state differences beyond what the product intentionally reveals.
-- Attempt to upload an image crafted to decompress to a very large pixel count (a decompression bomb) and confirm the guard rejects it before full decode.
+- Attempt to upload an image crafted to decompress to a very large pixel count and confirm the guard rejects it before full decode.
 
 Findings are fixed before the sane-mode pass.
 
@@ -957,13 +1027,14 @@ Sober review against section 1:
 - Do the non-negotiable and heritage flows work for a Haitian, a Yoruba, a Gujarati, and a fourth-generation American, with the same fields?
 - Are the copy and error messages calm and plain?
 - Is the code smaller than it was before the red-team fixes, or has security work added complexity that can be simplified?
-- Does anything in this phase quietly reintroduce a visible count, list, or score that section 1 rules out?
+- Does anything in this phase quietly reintroduce a visible count, list, score, or preserved backlog that section 1 rules out?
+- Is anything this document calls internal actually reachable, or merely undocumented?
 
 ---
 
 ## 13. Goals cross-check
 
-| Research finding | Design decision |
+| Research or review finding | Design decision |
 |---|---|
 | Acceptance odds fall 27% across a browsing session (Pronk and Denissen) | 5 profiles a day, one at a time, no going back |
 | Large pool plus reversible choice is the worst outcome (D'Angelo and Toma) | Capacity limit; ending a connection requires a note; no undo on Pass |
@@ -974,11 +1045,15 @@ Sober review against section 1:
 | Cornell: race filters and same-race algorithms reinforce bias | User-stated preference only; no inference; no ranking except the user's own rules |
 | Genotype is a first-date question in Nigeria | Optional, off-by-default health section with its own separate consent, decoupled from heritage |
 | Physical attraction is a must-have for 97% | Photos shown, first must show a face; non-negotiables shown above them |
-| Ghosting and "ghostlighting" (66.5%, BLK) | End-with-a-note, fade detection attributed to whoever actually stopped replying; held as an internal abuse signal, never a public score, because a public score would pressure people into staying in bad conversations |
-| Sidekick patent claims require hiding the profile and refusing likes at the limit | The available/focused mechanism removes focused users from candidate pools entirely, decided for product reasons independent of the patent; whether this reading is closer to or further from the claims is a Phase −1 legal question, not an assumption baked into the architecture |
+| Ghosting and "ghostlighting" (66.5%, BLK) | End-with-a-note, fade detection attributed to whoever actually stopped replying; held as an internal abuse signal, never a public score |
+| A hidden backlog of admirers undermines the "no illusion of options" premise (first external review) | Focused users are removed from every other user's candidate pool; only pre-existing likes from senders who were available at send time could ever surface |
+| A preserved, not merely paused, backlog still contradicts the premise (second external review) | Every other pending like, both directions, is cleared the instant a user's last slot fills; becoming available again is a genuine clean slate |
+| A function labeled internal was still reachable via the Data API (second external review) | Every non-client-facing function lives in a `private` schema that is never exposed, not merely named with an underscore |
+| A caller, not just a target, could bypass focus through a race (second external review) | Every availability check is symmetric: both sides, at every step, with the row-locked transaction as final authority |
+| An already-generated feed could still show a now-focused person (second external review) | Availability is re-checked at read time with backfill, not only at generation time |
+| Sidekick patent claims require hiding the profile and refusing likes at the limit | The available/focused mechanism and the clear-on-focus rule were designed for product reasons independent of the patent; whether this reading is closer to or further from the claims is a Phase −1 legal question |
 | Hinge Your Turn Limits raised responsiveness 20% | Waiting list must be answered before new discovery |
 | Diaspora apps bundle dating with community, and community is where the pool comes from | No community lane in v1; launch inside an existing community |
-| A hidden backlog of admirers undermines the "no illusion of options" premise (external review, 2026-09-09) | Focused users are removed from every other user's candidate pool; only pre-existing likes from senders who were available at send time can ever surface |
 
 ---
 
@@ -988,38 +1063,38 @@ Each phase ends with the three review passes in section 12.
 
 ### Phase −1: Legal and technical prerequisites (gates Phase 2 only)
 
-- Commission a freedom-to-operate review of the capacity and visibility mechanism (sections 2.2 and 7) against the Sidekick Dating patent family (US 11,895,115 and its pending continuation), covering the specific available/focused design in this revision, not the 2026-09-08 draft's design.
-- This gates the start of Phase 2 specifically, because Phase 2 is where `available()`, `_form_connection()`, `get_daily_feed()`, and the rest of the patent-adjacent mechanism get implemented. Phase 0 and Phase 1 do not touch capacity, matching, or visibility logic and may proceed in parallel with this review.
-- Confirm the stack decisions in this document (Next.js 16, Supabase publishable/secret keys, Supabase Pro at $25/month, ephemeral staging branches) are still current before Phase 0 begins, since they were verified against live sources on 2026-09-09 and could drift before implementation starts.
+- Commission a freedom-to-operate review of the capacity and visibility mechanism (sections 2.2 and 7) against the Sidekick Dating patent family (US 11,895,115 and its pending continuation), covering the current design specifically: focused users removed from candidate pools, and every other pending like cleared the moment a user's last slot fills.
+- This gates the start of Phase 2 specifically, because Phase 2 is where `private.available()`, `private._form_connection()`, `get_daily_feed()`, and the rest of the patent-adjacent mechanism get implemented. Phase 0 and Phase 1 do not touch capacity, matching, or visibility logic and may proceed in parallel with this review.
+- Confirm the stack decisions in this document (Next.js 16, Supabase publishable/secret keys, Supabase Pro at $25/month, ephemeral staging branches, the 2-hour Supabase upload URL paired with a 5-minute application ticket) are still current before Phase 0 begins, since they were verified against live sources on 2026-09-09 and could drift before implementation starts.
 
 ### Phase 0: Project setup
 
-- Create the Supabase project (cost confirmed at $25/month base). Configure Auth providers, Turnstile, SMTP for development, and the GitHub branching integration for ephemeral PR previews.
-- Scaffold `Dating App/app` with Next.js 16, TypeScript, Tailwind, `@supabase/ssr`, zod, sharp. Add root `.gitignore`. Add `proxy.ts` with the header set from section 9.3 from the start.
-- Local stack running; CI skeleton green on an empty migration, including the expand/contract label check.
-- Exit: `pnpm dev` shows a sign-in page; `supabase test db` runs zero tests successfully; a test PR produces a working ephemeral preview.
+- Create the Supabase project (cost confirmed at $25/month base). Configure Auth providers, Turnstile, SMTP for development, the GitHub branching integration for ephemeral PR previews, and the `private` schema, confirming it is absent from the exposed-schema configuration.
+- Scaffold `Dating App/app` with Next.js 16, TypeScript, Tailwind, `@supabase/ssr`, zod, sharp. Add root `.gitignore`. Add `proxy.ts` with the header set from section 9.3, including the Turnstile-compatible CSP, from the start.
+- Local stack running; CI skeleton green on an empty migration, including the expand/contract label check and the private-schema-unreachability test.
+- Exit: `pnpm dev` shows a sign-in page with a working Turnstile widget; `supabase test db` runs zero tests successfully; a test PR produces a working ephemeral preview.
 
 ### Phase 1: Foundation
 
-- Migrations (all expand): enums, `profiles`, `profile_sensitive`, `profile_private`, `profile_answers`, `profile_heritage`, `preferences`, `heritage_preferences`, `photos`, `verifications`, `consents`, `admins`, `admin_audit`, `user_daily`. RLS for all. `is_admin()`, `is_admin_mfa()`, `normalize_key()`, triggers for lengths and counts.
-- Auth flows including admin TOTP enrollment, onboarding screens (with the two-tier consent from section 8.1), the ticket-and-process upload pipeline, selfie capture, admin verification queue behind `is_admin_mfa`.
-- Exit: a new user can complete onboarding and be approved by an aal2-enrolled admin; pgTAP covers every policy in this phase, including the `profile_sensitive` split and the admin MFA gate.
+- Migrations (all expand): enums, `profiles`, `profile_sensitive`, `profile_private`, `profile_answers`, `profile_heritage`, `preferences`, `heritage_preferences`, `photos`, `verifications`, `upload_tickets`, `consent_events`, `admins`, `admin_audit`, `user_daily`. RLS for all. `private.is_admin()`, `private.is_admin_mfa()`, `private.normalize_key()`, `public.am_i_admin()`, `public.create_upload_ticket()`, `public.process_upload()`, `public.record_consent()`, triggers for lengths and counts.
+- Auth flows including admin TOTP enrollment, onboarding screens (with the two-tier append-only consent from section 8.1), the ticket-and-process upload pipeline, selfie capture, admin verification queue behind `is_admin_mfa`.
+- Exit: a new user can complete onboarding and be approved by an aal2-enrolled admin; pgTAP covers every policy in this phase, including the `profile_sensitive` split, the admin MFA gate, and the private-schema unreachability test for every helper introduced so far.
 
 ### Phase 2: Core loop (gated by Phase −1)
 
-- Migrations: `feed_items`, `likes`, `connections` (with `last_human_message_at`/`last_human_sender_id`), `user_abuse_signals`, `blocks`; `available()`, `can_view_profile()`, `mutually_compatible()`, `preference_score()`, `get_daily_feed()`, `feed_state()`, `decide_feed_item()`, `_send_like()`, `_form_connection()`, `next_waiting_like()`, `respond_to_like()`, `set_capacity()`, `block_user()`, expire and purge jobs.
+- Migrations: `feed_items`, `likes`, `connections` (with `last_human_message_at`/`last_human_sender_id`, no `end_note`), `user_abuse_signals`, `blocks`; `private.available()`, `private.can_view_profile()`, `private.mutually_compatible()`, `private.preference_score()`, `public.get_daily_feed()`, `public.feed_state()`, `public.decide_feed_item()`, `private._send_like()`, `private._form_connection()` (including the clear-on-focus step), `public.next_waiting_like()`, `public.respond_to_like()`, `public.set_capacity()`, `public.block_user()`, expire and purge jobs.
 - Screens: home (state machine over `feed_state()`), card, waiting list, connections list, capacity setting. No accountability or score display anywhere.
-- Exit: two test users can connect; the focused-exclusion concurrency test passes; RLS tests for `likes` and `user_abuse_signals` negative cases pass.
+- Exit: two test users can connect; the focused-exclusion, symmetric-race, stale-feed-backfill, and clean-slate concurrency tests all pass; RLS and schema-unreachability tests for `likes` and `user_abuse_signals` pass.
 
 ### Phase 3: Chat and ending
 
 - Migrations: `messages` (with `is_system`), triggers, Realtime publication, `end_connection()`, inactivity job with human-message attribution.
-- Screens: chat, end-connection sheet with note, faded state. No public accountability signal on cards.
-- Exit: Playwright smoke passes end to end, including the fade-attribution test.
+- Screens: chat, end-connection sheet with note (delivered only as a message), faded state. No public accountability signal on cards.
+- Exit: Playwright smoke passes end to end, including the fade-attribution test and confirming no `end_note` persists anywhere but the message stream.
 
 ### Phase 4: Safety, privacy, launch readiness
 
-- `reports`, `report_user()`, admin report review, ban and reinstate, `request_account_deletion()`, purge routes across all three storage buckets, Vercel Cron, `proxy.ts` header verification, PWA manifest and install prompt, privacy and terms pages, restore drill, production deploy.
+- `reports`, `report_user()`, admin report review, ban and reinstate, `request_account_deletion()`, purge routes across all three storage buckets and the ticket table, Vercel Cron, `proxy.ts` header verification including the Turnstile CSP, PWA manifest and install prompt, privacy and terms pages, restore drill, production deploy.
 - Exit: red-team checklist fully green on production configuration; a friend can install it on a phone and complete the loop.
 
 ---
@@ -1029,10 +1104,11 @@ Each phase ends with the three review passes in section 12.
 - The product name and domain.
 - Production email provider (Supabase default SMTP is rate-limited to a few messages an hour and is fine only for development).
 - Whether iOS Safari's PWA camera access is reliable enough for selfie capture, to be tested in Phase 1 on a real phone.
-- Freedom-to-operate review of the Sidekick patent family, now a hard Phase −1 gate rather than a pre-launch checklist item; see section 14.
-- Whether human selfie review remains sustainable past low thousands of users, and, if not, whether to introduce the single flat, universal fee described in section 1 rather than any differential-access model. This is explicitly not a decision to make now.
-- A staging environment beyond ephemeral per-PR branches, such as a longer-lived pre-production environment, if the team grows past one contributor.
+- Freedom-to-operate review of the Sidekick patent family, a hard Phase −1 gate; see section 14.
+- Whether human selfie review remains sustainable past low thousands of users, and, if not, whether to introduce the single flat, universal fee described in section 1.
+- A staging environment beyond ephemeral per-PR branches, if the team grows past one contributor.
 - Whether `style-src 'unsafe-inline'` in the CSP can be tightened once the Tailwind build output is audited in the red-team pass.
+- Whether a like cleared by the Focused transition should carry a distinct status value from one that naturally aged out at 30 days, for future internal analytics; currently both use `expired` and the distinction is not user-facing either way.
 
 ---
 
@@ -1041,12 +1117,14 @@ Each phase ends with the three review passes in section 12.
 - **Capacity**: the number of active connections a user allows themselves, 1 to 3.
 - **Connection**: a mutual match that has formed and is active. Occupies one slot for each member.
 - **Slot**: capacity minus active connections. "Open slot" means at least one.
-- **Available**: `active_connections(p) < capacity(p)`. Can appear as a candidate in others' feeds and can receive new likes.
-- **Focused**: not available. Removed entirely from other users' candidate pools; cannot receive new likes; can still act on likes that reached them while they were available.
-- **Feed item**: one profile served to one user on one day.
+- **Available**: `active_connections(p) < capacity(p)`. Can appear as a candidate in others' feeds, in an already-shown feed on re-read, and can receive new likes.
+- **Focused**: not available. Removed entirely from other users' candidate pools, including on re-read of an already-generated feed; cannot receive new likes; and, on the transition into this state, every other pending like involving the user, in either direction, is cleared rather than merely held.
+- **Feed item**: one profile served to one user on one day, re-validated for availability every time it is read back, not only when it was generated.
 - **Waiting list**: pending likes addressed to a user, surfaced one at a time, only from senders who are currently available, only when the user has an open slot.
 - **Non-negotiables**: the fields a user can mark must-match.
 - **Heritage**: self-written background, community, origin, language, and raised-in fields. Used in matching only when the user turns "Use heritage in who I'm shown" on.
 - **Importance**: the weight a user gives a heritage rule: nice to have (1), important (3), or must (hard filter).
 - **Faded**: a connection closed by the inactivity job after a nudge went unanswered, attributed internally to whichever party stopped sending human messages.
 - **aal2**: the Supabase Auth assurance level reached after a second factor (TOTP) is verified in the current session; required for all admin data access and actions.
+- **private schema**: the Postgres schema holding every function a client must never call directly, kept off the project's exposed-schema list so the Data API cannot route to it regardless of grants.
+- **Upload ticket**: an application-level row bounding a direct-to-storage upload to 5 minutes, independent of the underlying Supabase signed URL's own fixed 2-hour validity.
