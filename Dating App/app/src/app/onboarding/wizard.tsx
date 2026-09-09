@@ -119,6 +119,10 @@ type WizardData = {
     smoking_must: boolean;
     drinking_must: boolean;
     use_heritage: boolean;
+    height_pref_mode: Enums<"height_pref">;
+    height_pref_min_cm: number | null;
+    height_pref_max_cm: number | null;
+    height_pref_must: boolean;
   } | null;
   heritage: { field: Enums<"heritage_field">; value: string }[];
   heritagePrefs: { field: Enums<"heritage_field">; mode: Enums<"pref_mode"> }[];
@@ -177,7 +181,9 @@ export default function OnboardingWizard() {
           .maybeSingle(),
         supabase
           .from("preferences")
-          .select("kids_must, faith_key_must, practice_must, politics_must, smoking_must, drinking_must, use_heritage")
+          .select(
+            "kids_must, faith_key_must, practice_must, politics_must, smoking_must, drinking_must, use_heritage, height_pref_mode, height_pref_min_cm, height_pref_max_cm, height_pref_must",
+          )
           .eq("profile_id", uid)
           .maybeSingle(),
         supabase.from("profile_heritage").select("field, value").eq("profile_id", uid),
@@ -693,6 +699,16 @@ function NonNegotiablesStep({
   const [smokingMust, setSmokingMust] = useState(initialPreferences?.smoking_must ?? false);
   const [drinking, setDrinking] = useState<Enums<"habit">>(initialAnswers?.drinking ?? "sometimes");
   const [drinkingMust, setDrinkingMust] = useState(initialPreferences?.drinking_must ?? false);
+  const [heightPrefMode, setHeightPrefMode] = useState<Enums<"height_pref">>(
+    initialPreferences?.height_pref_mode ?? "doesnt_matter",
+  );
+  const [heightPrefMinCm, setHeightPrefMinCm] = useState(
+    initialPreferences?.height_pref_min_cm != null ? String(initialPreferences.height_pref_min_cm) : "",
+  );
+  const [heightPrefMaxCm, setHeightPrefMaxCm] = useState(
+    initialPreferences?.height_pref_max_cm != null ? String(initialPreferences.height_pref_max_cm) : "",
+  );
+  const [heightPrefMust, setHeightPrefMust] = useState(initialPreferences?.height_pref_must ?? false);
   const [timeline, setTimeline] = useState<Enums<"timeline"> | "">(initialAnswers?.timeline ?? "");
   const [relocate, setRelocate] = useState<Enums<"relocate"> | "">(initialAnswers?.relocate ?? "");
   const [incomeBand, setIncomeBand] = useState<Enums<"income_band"> | "">(initialAnswers?.income_band ?? "");
@@ -702,6 +718,22 @@ function NonNegotiablesStep({
       className="flex flex-col gap-3"
       onSubmit={async (e) => {
         e.preventDefault();
+        // Caught client-side rather than left to height_pref_range_needs_bounds:
+        // both fields individually pass their own 120-230 HTML min/max, so a
+        // reversed range is a plausible typo, not a malformed request -- and
+        // this update bundles every non-negotiable field into one statement,
+        // so an unvalidated reversed range would otherwise fail the whole
+        // save (losing every other must-toggle here too) with only a generic
+        // "something went wrong", not a hint about which field caused it.
+        if (
+          heightPrefMode === "range" &&
+          heightPrefMinCm &&
+          heightPrefMaxCm &&
+          Number(heightPrefMinCm) > Number(heightPrefMaxCm)
+        ) {
+          await run(async () => ({ error: { message: "invalid_height_range" } }));
+          return;
+        }
         const ok = await run(async () => {
           const uid = (await supabase.auth.getUser()).data.user!.id;
           const trimmedFaith = faithLabel.trim();
@@ -748,6 +780,10 @@ function NonNegotiablesStep({
               smoking_accept: smokingMust ? [smoking] : [],
               drinking_must: drinkingMust,
               drinking_accept: drinkingMust ? [drinking] : [],
+              height_pref_mode: heightPrefMode,
+              height_pref_min_cm: heightPrefMode === "range" && heightPrefMinCm ? Number(heightPrefMinCm) : null,
+              height_pref_max_cm: heightPrefMode === "range" && heightPrefMaxCm ? Number(heightPrefMaxCm) : null,
+              height_pref_must: heightPrefMode !== "doesnt_matter" && heightPrefMust,
             })
             .eq("profile_id", uid);
           return { error: e2 };
@@ -820,6 +856,51 @@ function NonNegotiablesStep({
         </select>
       </Field>
       <Checkbox checked={drinkingMust} onChange={setDrinkingMust} label="This is a must-match for me" />
+
+      <Field label="Height preference">
+        <select
+          value={heightPrefMode}
+          onChange={(e) => setHeightPrefMode(e.target.value as Enums<"height_pref">)}
+          className="rounded border border-gray-300 px-3 py-2"
+        >
+          <option value="doesnt_matter">Doesn&apos;t matter</option>
+          <option value="taller">Taller than me</option>
+          <option value="around">Around my height</option>
+          <option value="shorter">Shorter than me</option>
+          <option value="range">Choose a range</option>
+        </select>
+      </Field>
+      {heightPrefMode === "range" && (
+        <div className="flex gap-2">
+          <Field label="Min cm">
+            <input
+              type="number"
+              min={120}
+              max={230}
+              value={heightPrefMinCm}
+              onChange={(e) => setHeightPrefMinCm(e.target.value)}
+              className="w-24 rounded border border-gray-300 px-3 py-2"
+            />
+          </Field>
+          <Field label="Max cm">
+            <input
+              type="number"
+              min={120}
+              max={230}
+              value={heightPrefMaxCm}
+              onChange={(e) => setHeightPrefMaxCm(e.target.value)}
+              className="w-24 rounded border border-gray-300 px-3 py-2"
+            />
+          </Field>
+        </div>
+      )}
+      {heightPrefMode !== "doesnt_matter" && (
+        <Checkbox
+          checked={heightPrefMust}
+          onChange={setHeightPrefMust}
+          label="Make this a must-have (Focus won't show you anyone outside this)"
+        />
+      )}
 
       <Field label="Timeline">
         <select value={timeline} onChange={(e) => setTimeline(e.target.value as Enums<"timeline"> | "")} className="rounded border border-gray-300 px-3 py-2">

@@ -192,6 +192,10 @@ export type Database = {
           faith_key_must: boolean
           genotype_accept: Database["public"]["Enums"]["genotype"][]
           genotype_must: boolean
+          height_pref_max_cm: number | null
+          height_pref_min_cm: number | null
+          height_pref_mode: Database["public"]["Enums"]["height_pref"]
+          height_pref_must: boolean
           kids_accept: Database["public"]["Enums"]["kids"][]
           kids_must: boolean
           politics_accept: Database["public"]["Enums"]["politics"][]
@@ -210,6 +214,10 @@ export type Database = {
           faith_key_must?: boolean
           genotype_accept?: Database["public"]["Enums"]["genotype"][]
           genotype_must?: boolean
+          height_pref_max_cm?: number | null
+          height_pref_min_cm?: number | null
+          height_pref_mode?: Database["public"]["Enums"]["height_pref"]
+          height_pref_must?: boolean
           kids_accept?: Database["public"]["Enums"]["kids"][]
           kids_must?: boolean
           politics_accept?: Database["public"]["Enums"]["politics"][]
@@ -228,6 +236,10 @@ export type Database = {
           faith_key_must?: boolean
           genotype_accept?: Database["public"]["Enums"]["genotype"][]
           genotype_must?: boolean
+          height_pref_max_cm?: number | null
+          height_pref_min_cm?: number | null
+          height_pref_mode?: Database["public"]["Enums"]["height_pref"]
+          height_pref_must?: boolean
           kids_accept?: Database["public"]["Enums"]["kids"][]
           kids_must?: boolean
           politics_accept?: Database["public"]["Enums"]["politics"][]
@@ -662,6 +674,10 @@ export type Database = {
       am_i_admin_identity: { Args: never; Returns: boolean }
       attempt_set_birth_date: { Args: { p_birth_date: string }; Returns: Json }
       begin_upload: { Args: { ticket_id: string }; Returns: Json }
+      clear_verification_selfie_path: {
+        Args: { p_verification_id: string }
+        Returns: undefined
+      }
       create_upload_ticket: {
         Args: {
           kind: Database["public"]["Enums"]["upload_kind"]
@@ -669,6 +685,20 @@ export type Database = {
           verification_id?: string
         }
         Returns: Json
+      }
+      list_stale_incoming_objects: {
+        Args: { p_limit?: number; p_older_than?: string }
+        Returns: {
+          bucket_id: string
+          object_name: string
+        }[]
+      }
+      list_stale_verification_selfies: {
+        Args: { p_limit?: number; p_older_than?: string }
+        Returns: {
+          object_name: string
+          verification_id: string
+        }[]
       }
       process_upload: {
         Args: { height?: number; ticket_id: string; width?: number }
@@ -711,6 +741,7 @@ export type Database = {
       genotype: "AA" | "AS" | "SS" | "AC" | "SC" | "unknown"
       goal: "marriage" | "life_partner" | "serious_relationship"
       habit: "never" | "sometimes" | "regularly"
+      height_pref: "doesnt_matter" | "taller" | "around" | "shorter" | "range"
       heritage_field:
         | "background"
         | "community"
@@ -886,6 +917,7 @@ export const Constants = {
       genotype: ["AA", "AS", "SS", "AC", "SC", "unknown"],
       goal: ["marriage", "life_partner", "serious_relationship"],
       habit: ["never", "sometimes", "regularly"],
+      height_pref: ["doesnt_matter", "taller", "around", "shorter", "range"],
       heritage_field: [
         "background",
         "community",

@@ -13,6 +13,7 @@ const KNOWN: [pattern: RegExp, message: string][] = [
   [/invalid_prompts/i, "Each answer needs to be between 1 and 200 characters."],
   [/too_many_photos/i, "You can have up to 6 photos."],
   [/too_many_heritage_values/i, "You can list up to 5 values per field."],
+  [/invalid_height_range/i, "Minimum height must be less than or equal to maximum height."],
   [/too_many_verification_attempts/i, "Too many attempts today. Please try again tomorrow."],
   [/daily_upload_limit/i, "You've reached today's upload limit. Please try again tomorrow."],
   [/rate_limited/i, "You're making changes too quickly. Please wait a moment and try again."],
