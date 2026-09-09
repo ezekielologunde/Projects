@@ -1,9 +1,9 @@
 # Focus: Architecture and Security Design
 
 **Codename:** focus (rename any time)
-**Date:** 2026-09-08, revised 2026-09-09 (twice) after external review
-**Status:** Draft for review. No code exists yet. This document is the gate before any code is written.
-**Inputs:** `Dating App/research/2026-09-08-match-cap-competitor-research.md`, `Dating App/research/2026-09-08-intent-filters-diaspora-gaps.md`, and two rounds of full external review received 2026-09-09, both incorporated below after verifying every specific technical claim against current vendor documentation.
+**Date:** 2026-09-08, revised 2026-09-09 (seven times) after external review and the Phase 1 review cycle
+**Status:** Phase 0 and Phase 1 are complete and out for review (see section 0.6, section 14). Phase 2 remains gated on the Phase −1 legal review; nothing past this point has been implemented. This document is still the gate before that code is written.
+**Inputs:** `Dating App/research/2026-09-08-match-cap-competitor-research.md`, `Dating App/research/2026-09-08-intent-filters-diaspora-gaps.md`, six rounds of full external review received 2026-09-09 (sections 0.1-0.7), all incorporated below after verifying every specific technical claim against current vendor documentation or the running codebase.
 
 ---
 
@@ -89,6 +89,16 @@ Also fixed: the onboarding wizard's per-step state didn't hydrate from what was 
 - **`profiles.capacity` is not yet trigger-guarded as immutable**, though section 11.1's test list already describes it as if it were. Section 6.3's current immutable-column list (`status`, `verified_at`, `age`) has no live impact today since nothing reads `capacity` until Phase 2's `set_capacity()` exists — revisit when that function ships, either by adding `capacity` to the guard or by confirming raw writes are fine.
 - **Full homoglyph resistance for the social-handle scan** (e.g. Cyrillic look-alike characters) is not implemented; `unaccent()` catches ordinary diacritic evasion but not a genuine Unicode-confusables table. The spec never promised this, and it's a hardening item, not a broken guarantee.
 
+### 0.7 Constitution extraction and consolidated lifecycle diagrams (2026-09-09)
+
+A sixth input proposed a "product constitution," a worked "True Focus" example, a distinct "Focus Now" control, unified connection and discovery state diagrams, a contact-sharing mini-spec, a set of "missing" safety states, and a list of security items to patch before Phase 0. Checked line by line against this document and the current codebase before changing anything, since several of these read as if written against an earlier, pre-review snapshot of the project:
+
+- **Already shipped, not still pending:** Phase 0 and Phase 1 are both complete (this document's own section 14 exit criteria met), reviewed through the section 12 cycle, and out for review as a pull request. Every item on the proposed security "must fix" list — the `private` schema, narrow grants, the `upload_tickets`-ticket-plus-`begin_upload`/`process_upload` split replacing a raw object path, the Turnstile-compatible CSP, append-only consent, and the single-copy closing note — was already fixed in sections 0.1-0.2 and is live in Phase 1's migrations. The two availability-symmetry items (checking both sides, re-checking an already-generated feed at read time) are Phase 2 work, already specified exactly as proposed in section 0.2 findings 2-3 and section 2.2; there was nothing to patch, because Phase 2 hasn't been built yet.
+- **Already decided, not a new product decision:** the worked "True Focus" example (clearing every pending like, both directions, and hiding discovery the instant the last slot fills) is section 2.2's existing clear-on-focus mechanism from the second review (section 0.2), not a new mechanism. "Focus Now" as a control distinct from capacity is `focus_now_on()`/`focus_now_off()` (section 2.2, section 7.26), already designed before this input arrived. The proposed safety states (a private post-meeting check-in with a distinct "felt unsafe" branch, a narrow date-plan-sharing feature explicitly modeled on Bumble rather than an emergency-monitoring promise, one-sided deliberate contact sharing with an explicit warning about copies saved elsewhere) are sections 2.6 and 2.8, already more fully reasoned than the proposal, including an explicit, considered decision *not* to scan private chat messages between consenting connected adults for phone numbers or handles (section 2.8) — a position the proposal didn't consider and this document is keeping. The "boring, explainable" ranking pipeline (eligibility, mutual must-haves, reciprocal soft score, distance and recency as tie-breakers, small deliberate exploration, plain-language explanation instead of a percentage) is section 7.3 and 7.4, unchanged since the first review.
+- **Genuinely new, and added:** a compact, explicitly numbered "product constitution" naming ten invariants derived from section 1's goals (new subsection above, "The product constitution") — useful as a fast checklist future feature work can be held against, which prose goals alone don't give you. Consolidated connection-lifecycle and discovery-lifecycle diagrams (new sections 2.9 and 2.10) pulling together content that was previously correct but scattered across 2.2, 2.4, 2.5, and 2.7, frozen here for reference before Phase 2/3 write their migrations.
+- **Also produced, outside this document:** a 20-screen clickable prototype (no backend) covering the full proposed screen list, for the recommended pre-Phase-2 comprehension test with real users — Focus cannot run that test itself; a person has to.
+- **Not done, and out of scope for this document:** recruiting and running the 10-20-person user test. That is the project owner's step, not an engineering one.
+
 ---
 
 ## 1. Purpose, goals, non-goals
@@ -108,6 +118,21 @@ A dating web app where each person chooses how many people they can genuinely ge
 7. **Focus limits options. It must never limit exits.** Capacity limits who you can start something new with. It must never make it harder to leave something that isn't working, isn't safe, or has simply run its course. Ending a connection, blocking, and reporting are always available immediately, with no note required, no timer to wait out, and no reputation cost. Where this document's mechanisms ever seem to conflict with that sentence, this sentence wins.
 8. **Explain, don't score.** Every candidate is ordered by an internal reciprocal score that a person never sees. What they see instead is a short, factual account of what the two of them share, never a percentage, never a claim that an algorithm has found their soulmate. A number that precise about something this uncertain is a lie dressed as precision.
 9. **Contact information is shared only deliberately, one method at a time, and never mutually by default.** Focus never reveals a signup email, a real name beyond what a person chose to show, or any way to reach someone outside the app, unless that person explicitly chose to share it, in that moment, with that specific person. Sharing never happens automatically, is never a side effect of matching or messaging, and one person sharing never grants the other's information in return.
+
+### The product constitution
+
+Ten rules, extracted from the goals above rather than added to them (section 0.7). No feature, in any future phase, may violate one of these without first amending this section explicitly, in writing, with a reason — the same standard section 12.1 already holds code to.
+
+1. **Capacity is a ceiling, not a quota.** Choosing 3 means room for at most three, never an expectation of three. See "Daily loop" above.
+2. **One active connection means one real person receiving your attention**, not a ranked shortlist held in reserve. See "Nothing to collect," goal 4.
+3. **Focus limits options. It must never limit exits.** Goal 7, verbatim.
+4. **No backup bench while Focused.** Every other pending like, in either direction, is cleared the instant the last slot fills — not paused, not held. See "Daily loop," and section 2.9 below.
+5. **Safety overrides every normal interaction rule.** Reports, restriction, and "I felt unsafe" always bypass the ordinary End/Block flow and any waiting period. See sections 2.4-2.6.
+6. **No paid visibility, paid filters, paid capacity, or boosts.** Permanent, not a v1 decision — see below.
+7. **The algorithm recommends, humans decide.** Ranking orders candidates; a person clicks Interested or Not for me. No auto-matching, no opaque model, ever. See goal 8 and the "No opaque AI" non-goal below.
+8. **Must-haves are never silently relaxed.** Only the person who set a must-have can loosen it, deliberately, on their own settings screen. See section 2.7.
+9. **Zero profiles is an acceptable recommendation result.** "You're caught up" is a correct, honest state, not a bug to paper over with a wider funnel. See section 2.7.
+10. **Personal contact information is never exposed automatically.** One method, one direction, one deliberate action every time. See section 2.8.
 
 ### A permanent commitment versus a v1 decision
 
@@ -251,6 +276,64 @@ The distinction that matters is between the public profile and a private, alread
 Focus does not attempt to detect or block a phone number, handle, or messaging app name typed casually into an ordinary chat message between two connected adults; that would be paternalism dressed as safety, and these are consenting adults who are free to move their conversation wherever they like. Where such a pattern is detected in a message, the only effect is a one-time, dismissible line shown to the sender before it goes: "Keep your personal information private until you're comfortable sharing it. Once it's out there, Focus can't control how it's used." followed by Send anyway, never a block. The same detection continues to apply, unchanged, to public-facing profile prompts, where the concern is different: a stranger farming followers from a dating profile, not two people who have already chosen each other.
 
 Sharing a contact method, and reaching some of the other milestones in an active connection (a real conversation, a date plan created, marking "we met," wanting to meet again), together form an internal sense of how a connection is progressing. This is never shown to users as a level, a badge, or a score, matching section 1's "explain, don't score" principle; it exists only so Focus, in aggregate and never per-person in a way anyone can see, can tell whether the product is actually helping people move toward meeting rather than just accumulating messages.
+
+### 2.9 Connection lifecycle, consolidated
+
+Nothing new: every state and transition below is already specified in 2.2, 2.4, and 2.5. This is that content redrawn as one diagram, frozen here for reference before Phase 2/3 write the migrations that implement it.
+
+```
+AVAILABLE (candidate in discovery or the waiting list, section 2.2)
+   |
+   | mutual Interested (sender and recipient both available at that instant)
+   v
+CONNECTED  --------------------------------------------------------------
+   |                                                                     |
+   |-- ordinary use: conversation, share contact (2.8), plan a date      |
+   |   (2.6), mark "we met" and check in (2.6)                          |
+   |                                                                     |
+   |-- End Connection (2.4): either side, any time, note optional  ---> both slots free, never shown to each other again
+   |                                                                     |
+   |-- Unresponsive / faded (2.5, section 7.25 inactivity job)     ---> nudge, then explicit prompt, then automatic close; slot frees
+   |                                                                     |
+   |-- Block (2.4): no note, mutual invisibility                   ---> slot frees immediately
+   |                                                                     |
+   |-- Report (2.4): can accompany Block or stand alone; severity  ---> high/critical triggers automatic Restriction (below)
+   |   tiered, past connections reportable too for safety concerns      |
+   |                                                                     |
+   |-- Partner pauses (2.5): connection stays intact, this side    ---> one-tap End available immediately, not gated by 2.4's normal timeline
+   |   sees "This person has paused their account"                      |
+   |                                                                     |
+   |-- Partner deletes their account (2.5)                          ---> connection ends immediately, neutral message, slot frees
+   |                                                                     |
+   -- Partner is Restricted (2.5, following a high/critical report) ---> connection stays visible, messaging paused pending admin review
+```
+
+**Restricted** (2.5) always resolves to either **active** or **banned** — an admin decision, never left standing. **Banned** ends every active connection the same way account deletion does: immediate, neutral, slot-freeing.
+
+### 2.10 Discovery lifecycle, consolidated
+
+Also nothing new: this is 2.2's daily loop and 2.7's pool-exhaustion handling, redrawn as one flow.
+
+```
+Mutual must-haves (section 7.2, checked both directions)
+   v
+Currently available people only (section 2.2's available(p), re-checked at read time)
+   v
+Excluding: anyone ever connected with (permanent, 2.4), "Don't show again" (2.2),
+           anyone shown and passed too recently to reconsider (2.7's 90-day/changed-profile rule)
+   v
+Reciprocal ranking (section 7.3) -- orders, never filters
+   v
+Up to 5 a day, one at a time, one deliberately from outside the top-ranked set (2.2)
+   v
+Interested / Not for me  -- human decision, no auto-match (constitution rule 7)
+   v
+Pool reaches zero  ->  "You're caught up" (2.7), never a silently widened funnel:
+   - Wait (do nothing)
+   - Explore farther (distance only, explicit action)
+   - Review my own soft preferences (must-haves untouched unless the person changes them themselves)
+   - Occasionally: reconsider profiles that materially changed 90+ days ago, offered explicitly, never folded into the ordinary five
+```
 
 ---
 
