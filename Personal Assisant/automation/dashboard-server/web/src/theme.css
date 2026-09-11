@@ -586,16 +586,21 @@ body {
 .heatmap .cell {
   aspect-ratio: 1;
   border-radius: 3px;
-  background: var(--line);
-  transition: transform .15s var(--ease-out);
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  border: 1px solid var(--glass-border);
+  transition: transform .15s var(--ease-out), background-color .15s var(--ease-out);
 }
 .heatmap .cell:hover {
   transform: scale(1.2);
 }
-.heatmap .cell[data-level="1"] { background: color-mix(in srgb, var(--c-home) 28%, var(--line)); }
-.heatmap .cell[data-level="2"] { background: color-mix(in srgb, var(--c-home) 52%, var(--line)); }
-.heatmap .cell[data-level="3"] { background: color-mix(in srgb, var(--c-home) 76%, var(--line)); }
-.heatmap .cell[data-level="4"] { background: var(--c-home); }
+/* Mixed into the opaque --surface (not the already-transparent --line) so each
+   step stays fully opaque and reads clearly against the frosted-glass card —
+   the previous version compounded two low-alpha layers and made every level
+   look nearly identical. */
+.heatmap .cell[data-level="1"] { background: color-mix(in srgb, var(--c-home) 35%, var(--surface)); border-color: transparent; }
+.heatmap .cell[data-level="2"] { background: color-mix(in srgb, var(--c-home) 58%, var(--surface)); border-color: transparent; }
+.heatmap .cell[data-level="3"] { background: color-mix(in srgb, var(--c-home) 80%, var(--surface)); border-color: transparent; }
+.heatmap .cell[data-level="4"] { background: var(--c-home); border-color: transparent; }
 
 /* ============================================================
    Activity chart — applications-found-per-day bar chart with a
