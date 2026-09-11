@@ -6,6 +6,18 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--dir", "Dating App/app", "dev"],
       "port": 3000
+    },
+    {
+      "name": "lawson-web-dev",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d Lawson\\www.lawsonstate.edu\\apps\\web && npm run dev"],
+      "port": 3000
+    },
+    {
+      "name": "ezekielologunde-github-io",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d ezekielologunde.github.io && python -m http.server 8090"],
+      "port": 8090
     }
   ]
 }
