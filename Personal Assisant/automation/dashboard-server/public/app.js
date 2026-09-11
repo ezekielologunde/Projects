@@ -1,6 +1,7 @@
 const STATUS_COLORS = {
   staged: "#ff8c42", ready_to_submit: "#f5b64c", applied: "#34d399", interview: "#ffb17a",
-  rejected: "#f0605c", needs_manual_completion: "#f5b64c", unknown: "#6f7a8c",
+  interview_scheduled: "#ffb17a", in_review: "#5eb0ef", action_required: "#f5b64c",
+  rejected: "#f0605c", dropped: "#6f7a8c", needs_manual_completion: "#f5b64c", unknown: "#6f7a8c",
 };
 
 function esc2(s) {
@@ -52,7 +53,7 @@ function buildNotifications(data) {
   const items = [];
   const staged = data.applications.filter((a) => a.status === "staged").length;
   const interview = data.counts.interview || 0;
-  const attention = data.applications.filter((a) => a.status === "needs_manual_completion" || a.status === "unknown").length;
+  const attention = data.applications.filter((a) => a.status === "needs_manual_completion" || a.status === "action_required" || a.status === "unknown").length;
   if (interview) items.push({ dot: "var(--green)", text: `${interview} application${interview === 1 ? "" : "s"} at interview stage`, sub: "job search", page: "applications" });
   if (staged) items.push({ dot: "var(--blue)", text: `${staged} application${staged === 1 ? "" : "s"} staged, ready for your review`, sub: "job search", page: "applications" });
   if (attention) items.push({ dot: "var(--amber)", text: `${attention} application${attention === 1 ? "" : "s"} need manual completion`, sub: "job search", page: "applications" });
@@ -218,7 +219,7 @@ function countUp(el, target) {
 function heroCopy(data) {
   const staged = data.applications.filter((a) => a.status === "staged").length;
   const interview = data.counts.interview || 0;
-  const attention = data.applications.filter((a) => a.status === "needs_manual_completion" || a.status === "unknown").length;
+  const attention = data.applications.filter((a) => a.status === "needs_manual_completion" || a.status === "action_required" || a.status === "unknown").length;
   const activeGoals = data.goals.filter((g) => g.status === "active").length;
   const cyOpen = data.cyntraix && data.cyntraix._meta && data.cyntraix._meta.open_items ? data.cyntraix._meta.open_items.length : 0;
   const rsOpen = data.research && data.research._meta && data.research._meta.open_items ? data.research._meta.open_items.length : 0;
@@ -321,7 +322,7 @@ function buildNewsStrip(data) {
 
 function buildPerfStatChips(data) {
   const staged = data.applications.filter((a) => a.status === "staged").length;
-  const attention = data.applications.filter((a) => a.status === "needs_manual_completion" || a.status === "unknown").length;
+  const attention = data.applications.filter((a) => a.status === "needs_manual_completion" || a.status === "action_required" || a.status === "unknown").length;
   document.getElementById("perfStatChips").innerHTML = `
     <div class="perf-stat-chip b"><div class="psc-icon"><svg width="14" height="14"><use href="#i-brief"/></svg></div><div class="psc-num">${staged}</div><div class="psc-label">Staged</div></div>
     <div class="perf-stat-chip a"><div class="psc-icon"><svg width="14" height="14"><use href="#i-mail"/></svg></div><div class="psc-num">${attention}</div><div class="psc-label">Needs attention</div></div>`;

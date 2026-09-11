@@ -21,3 +21,6 @@ desktop.ini
 
 # Node dependencies
 node_modules/
+
+# graphify knowledge-graph output — contains the same PII as profile/ and applications/ above
+graphify-out/
