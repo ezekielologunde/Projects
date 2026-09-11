@@ -1,0 +1,1766 @@
+# Focus: Architecture and Security Design
+
+**Codename:** focus (rename any time)
+**Date:** 2026-09-08, revised 2026-09-09 (seven times) after external review and the Phase 1 review cycle
+**Status:** Phase 0 and Phase 1 are complete and out for review (see section 0.6, section 14). Phase 2 remains gated on the Phase −1 legal review; nothing past this point has been implemented. This document is still the gate before that code is written.
+**Inputs:** `Dating App/research/2026-09-08-match-cap-competitor-research.md`, `Dating App/research/2026-09-08-intent-filters-diaspora-gaps.md`, six rounds of full external review received 2026-09-09 (sections 0.1-0.7), all incorporated below after verifying every specific technical claim against current vendor documentation or the running codebase.
+
+---
+
+## 0. Revision history
+
+### 0.1 First review (2026-09-09)
+
+Sixteen findings, all incorporated: the available/focused mechanism was introduced to stop a hidden backlog of likes accumulating behind a focused user; the patent question was moved to gate the start of core-loop implementation rather than just launch; the upload design was redone around Vercel's real 4.5 MB function payload limit; the stack moved to Next.js 16; Supabase's cost was corrected to $25 a month; the app was designed around Supabase's publishable/secret key model; admin access was given a mandatory second factor; `seeking` was moved out of the publicly-selectable table; the public accountability score was removed in favor of an admin-only signal; inactivity attribution was fixed to ignore system messages; staging was added on ephemeral per-PR Supabase branches; migrations were split into expand and contract; genotype got its own separate consent; and the money framing was split into a permanent commitment and a v1 tactical decision.
+
+### 0.2 Second review (2026-09-09)
+
+Eight further findings, all incorporated, plus one product decision:
+
+1. **Internal helper functions were still exposed.** Section 6.5's rule ("internal helpers prefixed `_` are not granted") was never actually applied to `available`, `mutually_compatible`, and `preference_score`, which were labeled "internal" in prose but defined without the prefix and therefore fell under the "every function in section 7 gets `GRANT EXECUTE TO authenticated`" default. Confirmed against Supabase's own documentation: functions are executable by any role by default, with no exemption for naming conventions. **Fixed by moving every non-client-facing function into a dedicated `private` schema that is never added to the project's exposed-schema list**, so it is unreachable through the Data API regardless of grants, rather than relying on a naming convention that had already been violated once. See section 6.5.
+2. **A caller could still send a new like after becoming focused, through a race.** `decide_feed_item`, `_send_like`, and `respond_to_like` checked the target's availability but not the caller's. Fixed by making every availability check symmetric: both sides are checked at every step, with `_form_connection`'s row lock as the final authority. See sections 7.5, 7.6, 7.9.
+3. **A focused person could still appear in a feed that was generated before they became focused.** The read path for an already-generated daily feed had no availability check, only feed generation did, which contradicted the stated promise that a focused person never appears in anyone's feed. Fixed by checking availability at read time too, with backfill up to the daily ceiling when a card goes stale. See sections 6.2 and 7.4.
+4. **Supabase's signed upload URL cannot carry a 5-minute expiry.** Confirmed against Supabase's documentation: `createSignedUploadUrl` has no `expiresIn` parameter and is fixed at 2 hours. Fixed with an application-level `upload_tickets` table that expires in 5 minutes independently of the underlying Supabase URL's own 2-hour window. See section 5.2 and 7.16.
+5. **The upload-processing route accepted an arbitrary storage path from the client.** Fixed by having the client pass only a ticket id; the server resolves the path, owner, kind, and (for selfies) the linked verification attempt from the ticket row itself. See section 7.17.
+6. **The CSP would likely block Turnstile.** Confirmed against Cloudflare's documentation: Turnstile requires the literal `challenges.cloudflare.com` origin in `script-src`, not just a nonce, alongside the nonce propagated onto Turnstile's own script tag. Fixed in section 9.3.
+7. **Consent could not actually be re-recorded when a policy version changed**, because the original table's primary key `(profile_id, kind)` would collide on a second acceptance. Fixed by making consent an append-only event log. See section 5.2 and 7.18.
+8. **Closing notes were retained twice with contradictory lifetimes**, once forever on `connections.end_note` and once for 30 days in the message stream. Fixed by removing the column; the message stream is now the only copy and follows the same 30-day post-end purge as every other message.
+
+**Product decision: pending likes are now cleared, not just paused, the moment a user's last open slot fills.** The first review's fix (available/focused) stopped new likes from reaching a focused person. It left pre-existing likes waiting, which meant a person who formed a connection while several others had already liked them would, weeks later, resurface those old admirers one by one when the connection ended. That is a smaller version of the same problem: not a growing backlog, but a preserved one. This revision clears every other pending like, both directions, the instant a user transitions from available to focused, so that becoming available again is a genuine clean slate rather than a queue with a pause button. This is deliberately more expensive to the product's own match count, which is the point: it trades network efficiency for the "dating without backup options" premise the whole concept rests on. **Because this changes the exact capacity mechanism, it is explicitly added to the Phase −1 legal scope alongside the available/focused design itself**, not treated as a safe follow-on change.
+
+### 0.3 Safety and exit design (2026-09-09)
+
+A third input, verified against Hinge, Tinder, Bumble, and RAINN's current documentation, surfaced a gap the first two reviews didn't touch: the architecture had never worked out what happens when a connection goes wrong, silently, badly, or dangerously, and `paused` had existed as an enum value since the first draft without ever being given behavior. The fix adds a new stated principle and a fuller model for leaving:
+
+1. **New principle: focus limits options, it must never limit exits.** Added to section 1 alongside "the database is the referee." Ending a connection, blocking, and reporting are always available immediately, with no waiting period and no requirement to explain.
+2. **Ending a connection now has three distinct paths with different guarantees**, not one: a normal End (note now optional, not required, since forcing an explanation can manufacture confrontation rather than prevent it), Block (unchanged from the prior draft: no note, no explanation, permanent, mutual invisibility), and Report (now severity-tiered). See the new section 2.4.
+3. **Reports now carry a severity**, derived from the reason and overridable by an admin, confirmed against how Hinge, Tinder, and Bumble actually triage safety reports versus ordinary complaints. A `high` or `critical` report automatically and immediately restricts the reported person's account, pausing their ability to send new messages anywhere on the platform, pending human review, rather than waiting in the same queue as a report about a bad first impression.
+4. **Reporting a genuine safety incident is no longer bound by the same 30-day visibility window as an ordinary report**, matching Hinge's ability to report a past match about an offline incident. This is stated honestly alongside its real limit: if the connection's messages were already purged before the report was filed, that evidence cannot be recovered.
+5. **`paused` is now a defined, self-service state**, distinct from being banned or deleting the account: it removes a person from all future matching immediately, using the same status check that already gates matching, but does not forcibly end an existing connection. The other person in that connection is told plainly and given an immediate, one-tap way to end it themselves, rather than being left to wonder or to wait out the normal inactivity timer.
+6. **Automatic inactivity handling is shortened** from a 14-day nudge and a 3-day grace period (17 days total) to a 3-day nudge, a 7-day explicit prompt with a one-tap end option, and a 10-day automatic close, since the original window was not a floor on when someone could leave (manual ending was always available) but its length worked against the product's own premise of a single, present connection.
+7. **A private post-meeting check-in and an optional, deliberately minimal date-safety feature are added**, scoped narrowly per the recommendation not to build anything resembling an emergency-dispatch system: Focus generates a plan a person shares through their own phone's share sheet, exactly as Bumble's Share Date does, rather than Focus storing or sending a third party's contact information itself. See sections 2.5 and 2.6.
+
+### 0.4 Ranking philosophy and pool exhaustion (2026-09-09)
+
+A fourth input, cross-checked against Tinder's, Bumble's, and Hinge's own published matching and Discover documentation, addressed something the first three left alone entirely: what actually decides which 5 people appear, and what Focus says when there is honestly no one left. Five changes follow from it:
+
+1. **Matching is now explicitly reciprocal, not one-directional.** The original `preference_score` only scored the viewer's own heritage preferences against a candidate. It never asked whether the candidate would also want to see the viewer. Section 7.3 is rewritten around a symmetric score that credits both sides' soft preferences about each other, confirmed against the academic distinction between an ordinary recommender and a reciprocal one, where both parties' interest has to be modeled, not just one.
+2. **A fixed non-goal is replaced with a more precise one.** "No AI matchmaking" is replaced with a specific commitment: no opaque model decides compatibility in v1; ranking is built from explicit mutual preferences, distance, activity, and reciprocal scoring, all of it inspectable; a learned ranking model is something to consider later, only with real outcome data, never allowed to touch a hard dealbreaker or infer a sensitive attribute. See section 1.
+3. **Discovery stops pretending the pool is infinite.** When every mutually eligible, currently available person has already been shown, Focus says so plainly and offers to expand the search radius, review which soft preferences are narrowing things, or simply wait, rather than quietly re-serving people already passed on. See the new section 2.7.
+4. **"Not for me" and "Don't show again" are now two different actions**, alongside the existing Block from section 2.4: an ordinary pass that can, much later and only through an explicit reconsideration prompt, resurface if the person's profile has materially changed, versus a permanent exclusion for someone the user already knows and never wants to see suggested at all, such as an ex or a coworker. See section 2.7.
+5. **No compatibility percentage is ever shown.** The internal score exists only to order candidates. What a person sees is a short, factual explanation of what the two of them actually share, and one of the five daily introductions is named as the strongest, not as a prophecy but as a plain statement of why it ranked first.
+
+### 0.5 Capacity as a ceiling, permanent unmatching, and deliberate contact sharing (2026-09-09)
+
+A fifth input, confirmed against Tinder's, Hinge's, Bumble's, and RAINN's current documentation on unmatching, past-match reporting, in-app calling, and contact-safety guidance, sharpened three things at capacity 2 and 3 specifically, where more than one active connection makes "ceiling" and "target" easy to conflate:
+
+1. **Two people who have ever connected, however it ended, are never recommended to each other again in v1.** This turns out to already be true in this design and simply hadn't been stated plainly: `get_daily_feed`'s candidate query (section 7.4) excludes anyone with any row at all in `connections`, not only an active one, and connection rows are never deleted (section 5.2), so an ended pair is permanently excluded by the same mechanism that was already there. No new table was needed; the gap was in the prose, not the schema. Section 2.4 now says this explicitly, matching how Hinge and Tinder both treat unmatching as permanent rather than something to revisit later.
+2. **Capacity is a ceiling, not a quota.** A person with capacity 3 and two active connections has one open slot by the numbers, but may not want a third right now, and forcing them to either take it or lower their capacity setting entirely was a false choice. A new, separate toggle, "Open to new connections," lets a person close that remaining slot on their own terms without touching their capacity number, and reopen it just as easily. See the revised section 2.2 and section 7.1.
+3. **Contact information is shared only deliberately, one method at a time, and never mutually by default.** Sharing a phone number is not something Focus does automatically once two people seem to be getting along; it is an explicit action, confirmed against RAINN's guidance to withhold personal contact details until real trust exists and Hinge's warning that scammers push people off-platform quickly. Sharing from one side never reveals the other side's information in return. See the new section 2.8.
+
+Everything else from all five inputs was confirmed sound and is carried forward unchanged: the database-as-referee principle, likes being unselectable by users, deterministic-lock concurrency handling, the negative-authorization test list, and Realtime over Postgres Changes for chat.
+
+### 0.6 Phase 1 review cycle: code review, red-team, sane-mode (2026-09-09)
+
+Phase 1 (profiles, onboarding, verification) was implemented, then put through the three-pass cycle section 12 requires: an ordinary code review of the database layer and the Next.js layer, a live adversarial pass against the running local stack (raw HTTP and SQL, not the UI), and this sane-mode pass. Every fix below shipped in one migration (`20260909020000_phase1_review_fixes.sql`) and was re-verified with the full pgTAP suite, a fresh end-to-end browser walkthrough, and a real double-submission test against a live pending verification, before being applied to the remote project.
+
+**Fixed, security or data-integrity:**
+
+1. `profile_sensitive`, `profile_private`, `profile_answers`, and `preferences` used `FOR ALL` RLS policies, which also grants DELETE in Postgres — contradicting this document's own section 6.3, which lists DELETE as `none` on all four. Any user could delete their own birth date or non-negotiables directly through the REST API, bypassing every function meant to gate that data. Split into explicit SELECT/UPDATE policies.
+2. `process_upload` only ever recorded that a processed image existed; it never checked Storage agreed. Calling `begin_upload` then `process_upload` directly (skipping the real upload) satisfied `submit_for_review`'s photo/selfie checks with a completely fabricated reference, bypassing the decompression-bomb guard, EXIF stripping, and content sniffing entirely. It now requires the destination object to actually exist in `storage.objects` first.
+3. `admin_review_verification` had no idempotency guard and didn't reject a null decision. A double-click or retried request could leave `verifications.decision` and `profiles.status` disagreeing, or silently record a null decision. It now rejects a null decision up front and refuses a second decision on an already-decided verification; the admin review-queue UI now also disables a card's buttons the instant one is clicked.
+4. `profile_answers_sync_faith_key` was bound `before ... of faith_label`, so writing `faith_key` directly (bypassing `faith_label`) left the two permanently out of sync — confirmed live. Faith is a `must`-match field (section 2.3), so a desynced key would have let a user's match key diverge from what they display. Rebound with no column list, so it re-derives on every write regardless of which column was targeted.
+5. All seven `preferences.*_must_needs_accept` constraints, plus `heritage_preferences.accept_keys`'s range check, used bare `array_length(x, 1) > 0`. Postgres's `array_length` on an empty array returns NULL, and a NULL CHECK result is treated as satisfied — so `kids_must = true` with an empty `kids_accept` silently passed, contradicting section 5.2's explicit "a must with an empty accept array is rejected." Switched to a NULL-safe `coalesce(array_length(x, 1), 0) > 0`.
+6. Under-18 attempts are now actually refused and logged without the date, per section 2.1 — previously the client just upserted `birth_date` directly and let the CHECK constraint reject it, with no record kept. `birth_date` is now create-and-set only through `attempt_set_birth_date()`, guarded by the same immutable-column pattern `profiles.status` already uses. That function deliberately returns `{"ok": false, "code": "underage"}` instead of raising: raising would abort the whole transaction, including the log insert it's supposed to make durable — the one function in Phase 1 that returns a result instead of an error code, for that specific reason.
+7. `validate_and_scan_prompts`'s flag write silently no-opped if `profile_private` didn't exist yet (a plain UPDATE with no existence check); it now raises instead. The scan also didn't cover payment-app names despite section 9.5 requiring it — added Venmo/CashApp/Zelle/PayPal, with consistent word boundaries, and runs the match through `unaccent()` for basic diacritic evasion (not full homoglyph resistance — see section 15).
+8. `enforce_photo_limit` and `sync_heritage_value_key` had off-by-one bugs that blocked legitimate edits at their respective caps: replacing an existing photo once all 6 slots were full, and renaming a heritage value once a field held all 5. Both fixed to exclude the row being replaced/renamed from their own count.
+9. `enforce_genotype_gate` re-validated genotype consent on every `profile_answers` edit, not just genotype-related ones, so withdrawing consent after setting a genotype made every later unrelated edit fail until the user also manually cleared it. Scoped the trigger to the two columns it actually cares about.
+10. `create_upload_ticket`'s daily-limit check was read-then-write with no row lock, unlike the locking pattern section 7.4 mandates for the same reason. Made the increment itself the atomic gate, the same pattern `begin_upload` already used for ticket claiming.
+11. `rate_limit_profile_edits` didn't respect the bypass GUC that the immutable-columns guard already does, so `submit_for_review` and `admin_review_verification`'s own writes counted against the same 60-edits/hour counter as ordinary client edits.
+
+**Fixed, product completeness (Phase 1's own stated scope, not new scope):** the onboarding wizard never actually collected the three prompt answers section 2.1 lists as step 4, despite the database trigger built to scan them for handles — added a prompts step. Education and height (also listed in "the basics," section 2.3) were never captured — added to the basics step. Faith, politics, smoking, and drinking were missing their must-match toggles even though section 2.3's table marks all four "must-match allowed: yes" — added, each accepting only the value the user themselves chose (the same simplification the existing kids toggle already made, now applied consistently). Timeline, would-relocate, and income band (display-only, section 2.3) were never captured at all — added as plain fields with no filtering effect. Heritage's per-field importance ranking (nice-to-have/important/must, section 2.3) was entirely unimplemented, leaving `heritage_preferences` always empty — implemented, with one simplification: "the acceptable values typed by the user" defaults to the user's own entered values for that field (self-referential — a Haitian who wants a Haitian), rather than a separate typed acceptance list. Building a distinct autocomplete-driven "who would you accept" input is more polish than this foundation phase needs; a person wanting to accept heritage values other than their own can't yet, and that's a real, deliberate v1 limit worth revisiting once matching exists to see whether it matters in practice.
+
+Also fixed: the onboarding wizard's per-step state didn't hydrate from what was already saved, so using Back and then Continue again silently overwrote saved answers with a step's hardcoded defaults — including erasing a previously entered, consented genotype answer. Every step now loads its current values before rendering. The image-processing server action's best-effort Storage cleanup wasn't wrapped in a try/catch, so a cleanup failure could turn an already-successful upload into a thrown error; it's now genuinely best-effort. Raw error text (Postgres messages, GoTrue messages) was reaching the user in several places, contradicting section 9.9's "codes, never raw messages" — added a shared mapping to calm, plain copy with a generic fallback for anything unrecognized. The local OTP expiry was left at Supabase's 1-hour default instead of section 9.1's required 10 minutes — fixed locally; production needs the same change in the dashboard. An admin who abandoned TOTP enrollment left a stale unverified factor behind, which could eventually exhaust `max_enrolled_factors` — the admin MFA gate now cleans up any unverified factor on load.
+
+**Explicitly deferred, with reason (section 12.1: any deviation is fixed or written back with a reason):**
+
+- **Turnstile is still not wired up.** It needs a real site key and secret from the Supabase dashboard, which only the project owner can create — already flagged as a pending manual step before Phase 1's Storage/Auth setup began, unchanged by this review cycle.
+- **A `process_upload` failure after the Storage write has already succeeded** leaves an orphaned object with nothing in the database referencing it. A sweep for unreferenced `photos`/`verification` objects, which requires diffing a Storage listing against `photos`/`verifications` rows rather than just aging out a timestamp, stays deferred to Phase 4 (section 15) as its own item, not as one-off plumbing added here. This is a different, harder problem than `purge_incoming` (section 7.25), which just ages out anything left in `incoming`/`video-incoming` past 1 hour regardless of whether it was ever referenced — the two were conflated in this finding when it was first written; see section 0.18, which builds `purge_incoming` in Phase 1 and corrects the conflation.
+- **`profiles.capacity` is not yet trigger-guarded as immutable**, though section 11.1's test list already describes it as if it were. Section 6.3's current immutable-column list (`status`, `verified_at`, `age`) has no live impact today since nothing reads `capacity` until Phase 2's `set_capacity()` exists — revisit when that function ships, either by adding `capacity` to the guard or by confirming raw writes are fine.
+- **Full homoglyph resistance for the social-handle scan** (e.g. Cyrillic look-alike characters) is not implemented; `unaccent()` catches ordinary diacritic evasion but not a genuine Unicode-confusables table. The spec never promised this, and it's a hardening item, not a broken guarantee.
+
+### 0.7 Constitution extraction and consolidated lifecycle diagrams (2026-09-09)
+
+A sixth input proposed a "product constitution," a worked "True Focus" example, a distinct "Focus Now" control, unified connection and discovery state diagrams, a contact-sharing mini-spec, a set of "missing" safety states, and a list of security items to patch before Phase 0. Checked line by line against this document and the current codebase before changing anything, since several of these read as if written against an earlier, pre-review snapshot of the project:
+
+- **Already shipped, not still pending:** Phase 0 and Phase 1 are both complete (this document's own section 14 exit criteria met), reviewed through the section 12 cycle, and out for review as a pull request. Every item on the proposed security "must fix" list — the `private` schema, narrow grants, the `upload_tickets`-ticket-plus-`begin_upload`/`process_upload` split replacing a raw object path, the Turnstile-compatible CSP, append-only consent, and the single-copy closing note — was already fixed in sections 0.1-0.2 and is live in Phase 1's migrations. The two availability-symmetry items (checking both sides, re-checking an already-generated feed at read time) are Phase 2 work, already specified exactly as proposed in section 0.2 findings 2-3 and section 2.2; there was nothing to patch, because Phase 2 hasn't been built yet.
+- **Already decided, not a new product decision:** the worked "True Focus" example (clearing every pending like, both directions, and hiding discovery the instant the last slot fills) is section 2.2's existing clear-on-focus mechanism from the second review (section 0.2), not a new mechanism. "Focus Now" as a control distinct from capacity is `focus_now_on()`/`focus_now_off()` (section 2.2, section 7.26), already designed before this input arrived. The proposed safety states (a private post-meeting check-in with a distinct "felt unsafe" branch, a narrow date-plan-sharing feature explicitly modeled on Bumble rather than an emergency-monitoring promise, one-sided deliberate contact sharing with an explicit warning about copies saved elsewhere) are sections 2.6 and 2.8, already more fully reasoned than the proposal, including an explicit, considered decision *not* to scan private chat messages between consenting connected adults for phone numbers or handles (section 2.8) — a position the proposal didn't consider and this document is keeping. The "boring, explainable" ranking pipeline (eligibility, mutual must-haves, reciprocal soft score, distance and recency as tie-breakers, small deliberate exploration, plain-language explanation instead of a percentage) is section 7.3 and 7.4, unchanged since the first review.
+- **Genuinely new, and added:** a compact, explicitly numbered "product constitution" naming ten invariants derived from section 1's goals (new subsection above, "The product constitution") — useful as a fast checklist future feature work can be held against, which prose goals alone don't give you. Consolidated connection-lifecycle and discovery-lifecycle diagrams (new sections 2.9 and 2.10) pulling together content that was previously correct but scattered across 2.2, 2.4, 2.5, and 2.7, frozen here for reference before Phase 2/3 write their migrations.
+- **Also produced, outside this document:** a 20-screen clickable prototype (no backend, `Dating App/docs/prototype/2026-09-09-focus-clickable-prototype.html`) covering the full proposed screen list, for the recommended pre-Phase-2 comprehension test with real users — Focus cannot run that test itself; a person has to.
+- **Not done, and out of scope for this document:** recruiting and running the 10-20-person user test. That is the project owner's step, not an engineering one.
+
+### 0.8 Focus Product Specification v1 (2026-09-09)
+
+The product-facing content of sections 1 and 2 (rules, states, screens, copy) now also lives in its own document, `2026-09-09-focus-product-spec-v1.md`, written for a designer or test facilitator rather than an engineer, and frozen as v1: no new product decisions, only what was already decided here, organized for a different reader. This document remains authoritative for schema, security, and function behavior; that one is authoritative for what a screen says and does. The clickable prototype was expanded from 20 to the 30 screens that document enumerates, matched one-to-one, and re-verified.
+
+### 0.9 Height as a non-negotiable (2026-09-09)
+
+A seventh input proposed adding height as a real preference rather than display-only profile trivia, with a specific design: a relative preference (taller/around/shorter/a specific range) rather than an absolute number, `prefer` as the default with `must` available behind the same explicit friction every other must-have already requires, reciprocal and never a population-wide desirability signal, never paywalled, never auto-relaxed, and never given outsized visual prominence. Every cited claim was checked against its actual source before any of this was written into the spec, per this project's standing practice; several needed correction:
+
+- **Confirmed as cited:** the 2013 speed-dating study (Stulp et al., *Animal Behaviour*) sampled 5,782 daters across 128,104 decisions. Women were most likely to choose partners about 25 cm taller than themselves; men showed a much weaker preference, around 7 cm shorter. Actual matches formed at a 19 cm difference — real compromise, but skewed toward what women wanted more than a straight midpoint between the two stated preferences, worth stating precisely rather than rounding to "in between."
+- **Confirmed as cited:** the cross-cultural finding that a person's own height predicts their preferred partner height is real (Pisanski et al., *Frontiers in Psychology*, 2022; Canada, Cuba, Norway, and the US), and directly supports asking for a relative preference instead of an absolute number.
+- **Confirmed as cited:** the 2025 *Human Nature* study on height preference and gender-norm endorsement is real. Women in it wanted a partner about 16 cm taller than themselves on average, and valuing height correlated with higher self-reported endorsement of traditional gender norms in both sexes — a correlation the study itself reports, not a demonstrated causal mechanism, which is how it's described here.
+- **Confirmed as cited, with a correction:** the conjoint-analysis study is real (*Computers in Human Behavior Reports*, 2024/2025; 445 daters, 5,340 decisions) and height's effect on selection was 7 to 20 times smaller than attractiveness, matching the "photos remain indispensable" point exactly. Not mentioned in the original input: the same study found men's and women's revealed preferences (actual swiping choices) were similar in weight given to each trait, a smaller gender gap than the survey-based studies above show for stated preference. That gap between what people say and what they do is itself a reason to default to `prefer`, not `must`.
+- **Not confirmed as stated:** a specific "22% of women, 8% of men" Pew figure could not be located. Multiple other surveys support the same direction (women report height mattering considerably more than men do — one put it at roughly 43% of women calling it important or very important against a majority of men calling it unimportant), so the underlying claim is well supported; the specific number is not repeated here since it couldn't be verified.
+- **More important than anything in the original input:** Tinder is currently testing a paid height preference (Gold/Platinum subscribers) that is explicitly a soft signal, not a hard filter — "won't actually block or exclude profiles but instead inform recommendations" (TechCrunch, CNN, June 2025). This is real-world validation that `prefer`-not-`must` by default is the right call even for an incumbent optimizing for engagement, and a concrete cautionary example for why constitution rule 6 (no paid filters) matters here specifically: Focus gives everyone, free, on day one, exactly the preference model a competitor is charging for. Tinder's own Search feature separately refuses to let anyone search by height, race, religion, body type, or political affiliation at all, on the stated reasoning that the best connections come from focusing on the person, not a checklist — independent support for keeping height inline with occupation on a card rather than a headline trait.
+- **Not confirmed either way, not load-bearing:** the specific claims about exactly how Hinge's and Bumble's current filter menus are laid out. Hinge's general "Dealbreakers" mechanism is real and can apply to several profile fields; Focus's own design doesn't depend on matching any competitor's menu structure, so this wasn't pursued further.
+
+Height is added to section 2.3's non-negotiables table, `preferences` in section 5.2, `mutually_compatible` in section 7.2, and `reciprocal_score` in section 7.3, following the exact pattern every other soft-preference-with-optional-must-have already uses — no new mechanism, no special case. `Dating App/docs/specs/2026-09-09-focus-product-spec-v1.md` and the clickable prototype's Must-haves screen are both updated to match.
+
+### 0.10 Starting Fresh: fixing what Focus Reset's copy revealed (2026-09-09)
+
+An eighth input caught a real problem, not in the mechanism, in what the mechanism *says*. The prototype's Connection Formed screen named the two people whose pending likes had just expired ("Your pending interest in Tolu and Rachel just expired") — which tells a user there were specific admirers waiting, reintroducing the exact FOMO the clearing mechanism exists to remove, in the sentence explaining that FOMO doesn't apply here.
+
+Checked against the actual engineering before changing anything, since a UI complaint is sometimes really a mechanism complaint in disguise, and here it mostly wasn't:
+
+- **Already correct, not a new fix:** the clearing happens atomically inside `_form_connection`'s own locked transaction (section 7.7 step 5), not as a separate step that could fail independently. The race case — a second like arriving after the target's last slot has already filled — is already caught by `_send_like`'s and `decide_feed_item`'s existing symmetric availability re-check (sections 7.5, 7.6), returning `not_available` without ever creating a like row. Both were already correctly specified; this input restated them accurately but proposed no change to either.
+- **Already correct, needed to be said plainly:** whether an expired like permanently excludes the two people from ever being introduced again. It doesn't, and never did — `get_daily_feed`'s exclusion list (section 7.4) only checks the ordinary 30-day like-history window and `permanent_excludes`/`connections`/`blocks`, none of which an expired like ever populates. Nothing in the schema was preventing re-introduction; the prose just never said so, which read as ambiguous at best and as a permanent block at worst. Section 2.2 and a new glossary entry now say it outright: expire the opportunity, not the person.
+- **The actual fix:** UI copy. The event is now called Starting Fresh, not "starting from nothing" — the same mechanism, described as a deliberate choice about where a person's attention goes rather than as a loss ("you chose where your attention goes; if that chapter ends, Focus starts fresh rather than handing you a bench of people who were waiting"). Nobody is ever named, and no count is ever shown — consistent with, not an exception to, "nothing to collect" (section 1). The Connection Formed screen in the clickable prototype is corrected to match.
+- **Research check.** The choice-overload study is real: Apostolou, Constantinidou & Kagialis, "Mate Choice Plurality, Choice Overload, and Singlehood: Are More Options Always Better?", *Behavioral Sciences* 14(8):703 (2024), PMC11351274 — 804 Greek-speaking respondents, AI-generated psychometric instruments. Perceived mate-choice plurality predicted a 1.62x higher odds of being partnered, while choice overload independently reduced relationship commitment by 26% through a separate pathway, with the regret-driven dissolution effect significant only among men in this sample. Directionally exactly what the input claimed; the specific figures above are more precise than "more options increase the chance... but also difficulty committing," and the single-country, AI-instrument methodology is worth treating as suggestive rather than definitive. Coffee Meets Bagel's daily-cap model is real and more specific than described: 21 daily "Bagels" for men, 6 for women, with a separate 5-per-day cap on how many likes a user can send regardless of how many Bagels they saw — a real precedent for exactly Focus's own "5 a day, deliberately capped" choice, and for capping the *action* (a like) separately from the *browsing volume*. **Not confirmed:** a Tinder feature specifically named "Most Compatible." Tinder's actual March 2026 "Sparks" announcements describe AI-driven "Chemistry" matching and compatibility highlights, not a feature under that exact name — close enough in spirit that the underlying point (a single standout recommendation) still holds, but it isn't repeated as a named citation, and it wasn't needed anyway: Focus Pick (section 2.2) already does this job.
+
+### 0.11 Genetic compatibility, not "health compatibility" (2026-09-09)
+
+A ninth input raised a real, specific fear: a user reading "health compatibility" reasonably wondering whether Focus expects disclosure of a medical condition to a stranger they've just been introduced to. It doesn't, and the section only ever asked for hemoglobin genotype — but the label was broad enough to invite that misreading, and nothing in the spec had ever explicitly guaranteed genotype stays fully invisible to other users, the way it explicitly does for messages, likes, and every other sensitive field. Both were real gaps, checked and fixed:
+
+- **Renamed.** "Health compatibility" is now "Genetic compatibility" everywhere in this document, the product spec, and the prototype — a narrower, more accurate name for what's actually collected. A general health-conditions field (chronic illness, mental health, disability, fertility, STI status) was never planned and is now an explicit non-goal (section 1), not just an absence.
+- **Made explicit, not newly built.** Genotype was already must-only (never a soft `reciprocal_score` nudge) and already routed only through `mutually_compatible`'s boolean gate, same as every other must-have — the mechanism needed no change. What it lacked was an explicit promise that it's the *one* must-have field carved out of `shared_factors` entirely, unlike kids or faith, which do surface as plain-language lines when they align. Section 8.1 now states this exception by name.
+- **Verified against the sources cited.** ACOG's carrier-screening committee opinion is real and matches the input: if one partner is a carrier, the other should be offered screening, and genetic counseling — not a dating-app verdict — is the recommended next step when both carry a condition. The CDC's sickle-cell-trait figures are exact: generally asymptomatic for the carrier, 25% chance of the disease per pregnancy if both partners carry it. The cited PMC study is real, though it's specifically about HIV-status disclosure fields on "sex-social apps," not health fields generally — it documents "privacy unraveling," where an optional field's mere existence pressures people to fill it in or be assumed to be hiding something, which is itself the strongest argument for never adding a visible health field of any kind, optional or not. Grindr's HIV-status field is real and optional-and-visible as described — and the fuller history is worse than "anyone viewing the profile can see it": Grindr disclosed in 2018 that it had also been sending users' HIV status and test dates to third-party analytics vendors alongside device and location data, making re-identification possible. That failure mode is now cited directly (section 8.1) as the reason genotype must never reach logs or analytics either, not just profiles.
+- **One addition beyond the input's own request:** a single, private, dismissible line encouraging a real conversation with a healthcare professional once a connection is seriously progressing (section 2.6), rather than at first contact — matching ACOG's own timing guidance. Implemented as existing-screen copy, not a new screen; the prototype's frozen 30-screen count is unchanged.
+
+### 0.12 Prompts, an optional video, and liking a specific line (2026-09-09)
+
+Prompted directly by real-user reaction to the clickable prototype's Prompts screen (the specific quotes weren't captured in writing, only relayed after the fact), a tenth input proposed categorizing the three required prompts, adding one optional short video prompt, and letting a like carry a note tied to something specific on the other person's profile. All three checked against current sources before being written in, and against Focus's own rules before being accepted as designed rather than copied:
+
+- **Prompts, categorized and required.** Now one prompt required from each of three fixed categories — who I am, how I relationship, where I'm going — with a small curated choice of specific questions inside each category rather than one fixed question per slot. "How I relationship" in particular asks something a generic personality prompt never would ("When there's conflict, I usually..."), which fits a product for people who've already decided they want something serious better than the prompts Phase 1 shipped with. Bumble's own reported figures are real: members with two to three prompts got roughly a third more responses than those with none, in Bumble's own 2026 investor announcement. Already-shipped Phase 1 code updated to match (`wizard.tsx`'s `PromptsStep`) — narrow enough in scope, and validated enough by existing content-shape triggers (`validate_and_scan_prompts` cares only that there are exactly 3 answers, 1-200 characters each, regardless of which specific questions produced them), that it didn't need the full section 12 review cycle a schema or security change would.
+- **One optional video prompt.** Confirmed against Hinge's actual feature: 30 seconds, in-app only (front or back camera), unlimited re-recording before publishing, review before it goes live. Focus adopts the same shape deliberately — record-review-publish, no filters, no music, no imported files — specifically to avoid rebuilding social-media self-presentation inside a dating profile, and never autoplays anywhere. This is genuinely new engineering scope (its own Storage bucket, its own upload-ticket kind, server-side processing with no `sharp` equivalent for video) and is specified in section 2.3 as a scoped addition, not yet built. The literature on photos being the least accurate part of an online dating profile (Toma & Hancock's dating-deception research; self-enhancement is subtle and directional, not wholesale fabrication) is the actual justification for why a short unfiltered video adds something a curated photo can't, more than any competitor's feature list is.
+- **A like with a note, tied to something specific.** Section 2.2, `likes.note`, `_send_like`, and `_form_connection` all updated (sections 5.2, 7.6, 7.7) to carry an optional note privately alongside a like, surfaced only if and when the like becomes mutual, as the new connection's opening context rather than a blank thread. This is Hinge's actual strongest mechanic (react to something specific, not a generic swipe) and fits Focus's existing likes architecture with no new table, just one nullable column and one additional read at connection-formation time.
+- **What was independently useful context, not directly adopted:** Meta's Meet Cute (real: launched September 2025, a weekly algorithmically-chosen match instead of continuous browsing, alongside an AI assistant Meta states works only from what a user chose to display, not hidden behavioral tracking) is genuine validation of Focus's own thesis — fewer, better introductions over volume — from a competitor with far more engagement data than this project will ever have. It didn't change anything about Focus Pick, which already does the "one clearly-labeled best introduction" job Meet Cute does.
+- **What was proposed but not adopted, or only as an explicit experiment:** requiring 4-6 photos instead of the existing 2-6 minimum — a real friction increase not clearly justified by anything specific enough to decide here; left unchanged. Leading Focus Pick with its video before its photos — noted as a genuine, worthwhile experiment once video exists and there's real data (section 15), not decided now; photos stay first everywhere else, since attraction is real and hiding photos anywhere would read as a gimmick, not a principle. Prompt Polls (Hinge's multiple-choice profile element) — explicit non-goal (section 1); it doesn't advance a serious-dating thesis and every element of a five-a-day, richly-shown profile should earn its space.
+
+### 0.13 Reconciling a separate, already-tested prototype (2026-09-09)
+
+A second, independently-built clickable prototype (a professional design-tool export, not the one iterated on in this document's own revisions) surfaced after the fact, and appears to be what real testers actually used, given how closely earlier rounds of feedback (prompts, health/genetic framing, height) track its content. Read in full and checked line by line against this document before changing anything, since it predates several of this document's own decisions and shouldn't be assumed current on all of them:
+
+- **Renamed "Focus Now" to "Open to new connections."** Same mechanism, inverted polarity: the field, function names, and every reference below are now named for the on-state a person actually wants to see (`open_to_new`, default true), rather than a double negative ("not focus-now") a person has to mentally invert. The tested copy in the other prototype (*"Open to new connections"*, with the off-state read as *"You're not taking new connections right now. Nobody new can see you"*) is warmer than what this document had, and is adopted as the standard copy in section 2.2 and the product spec.
+- **Block/Report is not exclusively a safety escalation.** Re-reading section 2.4 against the other prototype caught a real inconsistency in this document's own clickable prototype (not in this spec, which already got this right): Block is specified in 2.4 as available for "I do not want this person to contact or encounter me again, whether or not anything unsafe happened," but the clickable prototype only routed to the Block/Report screen through the alarming "This skips ordinary breakup language... immediate danger" safety-flow interstitial. Fixed in the prototype (not a spec change; the spec already separated these correctly) so Block/Report is reachable directly and calmly from a connection, with the safety-flow escalation still available both from the post-date check-in's unsafe branches and as a secondary link inside Block/Report itself for a genuine emergency.
+- **The private meeting check-in (section 2.6) had no way to reach it.** The clickable prototype already had a "Post-date check-in" screen matching 2.6's design exactly (would-you-see-them-again, with a distinct unsafe branch skipping straight to Block/Report and emergency services) — closer to what 2.6 specifies than the other prototype's version, which only offers post-date reason chips inside its End Connection sheet with no separate "would you like to see them again" step at all. But nothing in the clickable prototype actually led into it: no "We met" action existed anywhere, and the "everything okay" check-in described in 2.6 as arriving near a date plan's expected end time was never wired to anything. Fixed by adding both entry points the prose already promised: a "We met" action inside an active connection (self-initiated, matching 2.6 verbatim), and, since a date plan's expected end time is already known server-side (7.21), a proactive "everything okay?" nudge at that moment that offers the same check-in as an immediate next step rather than requiring a person to remember it days later. This changes nothing about the check-in's privacy guarantee (7.20: never readable by the other member, under any condition) or its content — only when a person is invited to use something that already existed.
+- **Explicitly not adopted from the same source:** the other prototype's post-date questions are framed as continuously revisable and feed its own matching algorithm ("All your comments help us know who your type is"). Focus's version is a one-time, private read for the person themselves and for `_purge`-scoped abuse signals only (7.20) — it does not feed reciprocal_score, does not become a hidden preference-learning signal, and is never revisited or asked again for the same connection. Turning it into an implicit ranking input would contradict the "boring, explainable" ranking philosophy (7.3-7.4) and the same non-scoring stance already applied to height and heritage (0.9, 0.11); declined for that reason, not overlooked.
+- **Not adopted, and not applicable:** a persistent "Discover" tab that disappears from the tab bar when a person becomes unavailable. Focus has no persistent discover surface to begin with — section 2.2's daily loop is a small, capped set of introductions on Home, not a browsable tab (Home already becomes an entirely different, discovery-free screen once Focused, per 2.2 and the Focused-state screen) — so the underlying principle (no way to browse while Focused) is already satisfied more strongly than hiding a tab would achieve. No change made.
+
+### 0.14 The video prompt's actual upload mechanics (2026-09-09)
+
+Section 0.12 specified the video prompt's shape (30 seconds, in-app only, record-review-publish) and flagged it as "genuinely new engineering scope... not yet built," but deliberately left its Storage-and-database mechanics undesigned. This is that design, worked out before any code, per the standing review order — chosen to extend the existing photo upload pipeline (sections 7.16, 7.17, 7.30) as closely as its one real difference allows, rather than invent a parallel one.
+
+**The one real difference: no Sharp-equivalent for video.** The photo pipeline's actual security backstop isn't the client's honesty, it's the server: Sharp decodes the real bytes, confirms they're actually an image, strips metadata, and re-encodes at a bounded size, so nothing a browser claims about a photo has to be trusted. Video has no equivalent step available in a Vercel function without a native `ffmpeg` dependency, which this phase does not take on. Given that, the server can still do two things without transcoding: confirm the bytes are actually a video container it recognizes (magic-byte sniffing, the same principle as Sharp's format check, just without a decode), and cap the byte size tightly enough that a 30-second clip is the only thing that fits regardless of what the client's own timer did or didn't enforce. A modest, web-recorded 30-second clip (VP9/Opus or H.264/AAC at ordinary `MediaRecorder` bitrates) runs 4-10 MB; a 25 MB ceiling comfortably covers real device variance while making a much-longer clip arithmetically unable to fit, the same shape of guarantee `MAX_DECODED_PIXELS` already gives the photo path against a decompression bomb, not a precise duration check, and documented as exactly that tradeoff rather than implied to be more than it is.
+
+**Poster frame, reusing the part that already has a security backstop.** A video must never autoplay (section 0.12) and needs a static image to show before anyone presses play. Rather than extract a frame server-side (which would need a video decode Focus doesn't otherwise do), the client captures one canvas frame from its own just-recorded clip and sends it alongside the video as an ordinary image. The server runs that frame through the exact same Sharp validation, resize, and WebP re-encode as any photo — it just writes the result next to the video instead of into `photos`, since a video's poster isn't one of the profile's six photo slots and shouldn't count against that limit or appear in the grid.
+
+**Mechanics:**
+
+- `upload_kind` gains a fourth value, `video_prompt` (section 5.1). Unlike `photo`, it needs no `position` and unlike `selfie`, no `verification_id` — a profile has at most one video prompt.
+- `upload_tickets` gains `poster_object_path text`, nullable, required exactly when `kind = 'video_prompt'` (a CHECK mirroring the existing `photo_ticket_needs_position`/`selfie_ticket_needs_verification` pair). `create_upload_ticket` (7.16), for this kind, additionally generates and returns a second `incoming` path for the poster frame, and `begin_upload` (7.30), for this kind, additionally computes and returns both final destination paths.
+- A new table, `video_prompts` (section 5.2): one row per profile (`profile_id uuid PK`), `video_path` (`video-prompts/{profile_id}/{id}.webm` or `.mp4`, whichever container the upload actually turned out to be) and `poster_path` (`video-prompts/{profile_id}/{id}.webp`, always — the poster is normalized to WebP by Sharp regardless of the video's own container), server-generated, same path-pattern CHECK discipline as `photos.storage_path`, `poster_width`/`poster_height` smallint, `duration_ms integer` (client-reported, display-only — "0:18" next to the play button — and explicitly not a security control; the byte-size ceiling above is what actually bounds length), `prompt_text` (the chosen prompt, mirroring how `profiles.prompts` stores its own question text rather than just an id), `created_at`. RLS: `video_prompts_select_viewable` under the same `can_view_profile` gate as `photos`; `video_prompts_delete_own` for the owner, matching `photos_delete_own`, even though no v1 screen exposes a bare "remove" action yet (section 15) — consistent with every other asset table having an owner-delete escape hatch regardless of whether the current UI surfaces it.
+- Two new Storage buckets (section 6.4), `video-incoming` (own 25 MB ceiling and a `video/webm`, `video/mp4` allowlist, kept separate from the existing `incoming` bucket precisely so raising a size ceiling for video never also raises what an attacker can throw at the image path) and `video-prompts` (final, private, same read/write/delete shape as `photos`).
+- A new function, `public.process_video_prompt_upload(ticket_id uuid, video_format text, poster_width smallint, poster_height smallint, duration_ms integer, prompt_text text) returns jsonb`, parallel to `process_upload` (7.17) but upserting `video_prompts` (unique on `profile_id`, so re-recording replaces the existing row) instead of inserting into `photos`, and returning both old paths (video and poster) for the calling route to delete from Storage, the same orphan-cleanup shape `process_upload` already uses for a replaced photo. `create_upload_ticket` and `begin_upload` are extended in place rather than forked, since their preconditions and shapes differ from the photo/selfie case only in which optional fields are populated.
+- The calling route (mirroring `processUploadedImage`, section 4.3): claim the ticket, download both raw objects from `video-incoming`/`incoming` with the secret key, sniff the video's magic bytes and reject anything that isn't a recognized `webm`/`mp4` container or exceeds 25 MB (`not_a_video`, `video_too_large`), run the poster through the same Sharp steps as an ordinary photo, write both processed objects to `video-prompts`, call `process_video_prompt_upload`, then delete both `incoming` originals and any orphaned previous video/poster the same way a replaced photo's old object is cleaned up today.
+
+No change to the daily loop, matching, or capacity mechanism — this is entirely Phase 1 profile/upload surface, so it is not gated by the Phase −1 legal review (section 14), which covers only the visibility and matching mechanism.
+
+### 0.15 Video prompt review cycle: code review, red-team, sane-mode (2026-09-09)
+
+The standing review order applied to section 0.14's implementation before it was considered done, the same three-pass cycle section 0.6 ran for the rest of Phase 1. One finding was serious enough to be worth naming plainly:
+
+- **The rebuilt `create_upload_ticket` silently reverted two already-fixed bugs.** Extending it for `video_prompt` was written against the *original* function body (`20260909010500_phase1_functions.sql`) rather than the version `20260909020000_phase1_review_fixes.sql`'s fix #8 had already superseded, which reintroduced, for every kind, not just video: a check-then-act race on the 20/day upload limit (a burst of concurrent calls could each read the same pre-increment count and all pass), and a dropped `unexpected_verification_id` guard on `photo` tickets. Neither regression was caught by the existing pgTAP suite, since neither behavior had a test — both do now (`30_phase1_video_prompt.sql`). Fixed by rebuilding the function on top of the already-fixed version instead, and this is now the explicit rule going forward: extending an existing `SECURITY DEFINER` function via `create or replace` must start from its current form, not its original migration, and a change like this should come with a regression test for exactly the fix it could have clobbered.
+- **A video actually recorded as MP4 (Safari; every other browser records WebM) would have been silently written to a `.webm`-named object with a `video/webm` Content-Type.** `looksLikeWebmOrMp4` (renamed `sniffVideoFormat`) already distinguished the two containers, but `begin_upload`'s destination path was a fixed `.webm` guess computed before any bytes exist to sniff, and nothing downstream ever corrected it. Fixed by having the calling route pass the real sniffed format to `process_video_prompt_upload` as a `video_format` parameter (7.17a, now `('webm', 'mp4')`-checked), which is what actually computes and owns the final path — `begin_upload`'s guess is now documented as exactly that, a placeholder the route doesn't use for this kind, not a claim its own destination pointer keeps. The `video_prompts.video_path` CHECK and the `video-prompts` bucket's `allowed_mime_types` were widened to match.
+- **Two smaller client-side fixes**, from the same review: the recorded clip's object URL is now revoked (via a ref, since the unmount cleanup effect's closure can't see a later state update) if a person leaves mid-review without choosing Redo or Use this take; and Record/Stop both gained a re-entrancy guard, since a double-click could previously orphan a `MediaStream` (a second `getUserMedia()` call racing the first) or throw `InvalidStateError` (stopping an already-inactive `MediaRecorder`).
+- **Not fixed here, flagged separately:** the spec's own scheduled-jobs table (7.25) has listed `purge_incoming` since Phase 1 was first built, but it was never actually implemented — a pre-existing gap this feature's own red-team pass surfaced, not something it introduced, though the two-raw-object-per-ticket shape roughly triples the orphaned-bytes exposure of an abandoned upload compared to a photo. Real cleanup-job work, out of scope for this pass; tracked separately rather than folded in here.
+
+### 0.16 Height preference, built into real Phase 1 code (2026-09-09)
+
+Section 0.9 froze height as a non-negotiable — a `height_pref` enum, four new `preferences` columns, and its place in `mutually_compatible`/`reciprocal_score` — but 0.9 was written after Phase 1's code had already shipped and been through its own review cycle (0.6), so nothing beyond the spec prose ever actually existed: no `height_pref` type, no `preferences` columns, no onboarding UI. Confirmed by grep before writing anything, the same way the "Health compatibility" copy gap and the video prompt's missing mechanics were both found by checking what the frozen spec said against what the shipped code actually did.
+
+Closing it is data-collection only. `mutually_compatible()` and `reciprocal_score()` reading these columns for real is Phase 2 matching logic and stays gated behind the Phase −1 legal review exactly like the rest of that phase; a person being able to state a height preference during onboarding, the same way they already state kids/faith/politics preferences, does not require the matching engine to exist yet.
+
+- `public.height_pref` (`doesnt_matter | taller | around | shorter | range`, section 5.1) and four new `preferences` columns (`height_pref_mode` default `doesnt_matter`, `height_pref_min_cm`, `height_pref_max_cm`, `height_pref_must` default `false`), all additive against existing rows.
+- Five CHECK constraints, deliberately not shaped like the other fields' `*_must_needs_accept` pattern (height compares directly against a candidate's own `height_cm`, section 0.9 — there's no accept-array to require): `height_pref_must` can't be `true` while `height_pref_mode` is still `doesnt_matter`; `range` mode requires both bounds present and ordered (`min <= max`); non-`range` modes require both bounds absent; and each bound, if present, falls within the same 120-230cm sanity range `profiles.height_cm` itself already uses — one constraint per bound (`height_pref_bounds_sane`, `height_pref_max_sane`) rather than one combined, so a violation names the specific column at fault.
+- Onboarding: a height-preference select plus a conditional min/max range input and a must-toggle, added to the existing non-negotiables step in `wizard.tsx`, matching the copy already validated in the clickable prototype's Must-haves screen.
+- 12 new pgTAP tests (`40_phase1_height_preference.sql`) exercise every constraint directly, including that reverting to `doesnt_matter` while `height_pref_must` is still `true` is rejected on an ordinary update, not just at insert time.
+
+### 0.17 Height preference review cycle: code review, red-team, sane-mode (2026-09-09)
+
+The same standing three-pass cycle as 0.6 and 0.15, run before 0.16 was considered done. The red-team pass, including a from-scratch reproduction of every constraint against an isolated Postgres container (multi-statement toggling, enum-case tricks, smallint overflow, fractional-input rounding), found nothing exploitable — CHECK constraints in Postgres are not deferrable, so there is no intermediate state across two requests that a later statement's constraints fail to see. Two smaller things, both from the code review and sane-mode passes independently converging on the same first item, were worth fixing:
+
+- **This document undercounted its own constraints.** 0.16 originally said "four CHECK constraints"; there are five, because the 120-230cm sanity check is two constraints (one per bound, `height_pref_bounds_sane`/`height_pref_max_sane`) rather than one combined — a deliberate choice (a violation then names the specific column at fault) that just wasn't reflected in the prose. Fixed in 0.16 above. The same gap meant the pgTAP suite never exercised the max-side sanity constraint at all (its min-side twin was tested, but nothing tried an out-of-range `height_pref_max_cm` specifically) — a real coverage hole, since a future copy-paste slip in that constraint (accidentally checking `height_pref_min_cm` again instead of `height_pref_max_cm`) would have shipped silently. A twelfth test closes it.
+- **A plausible user typo — min height greater than max, in the range picker — could fail the entire non-negotiables save, silently.** `NonNegotiablesStep` bundles every non-negotiable field into one `preferences` UPDATE; an inverted range correctly trips `height_pref_range_needs_bounds` server-side, but since that update also carries kids/faith/practice/politics/smoking/drinking's must-toggles, a height-only mistake meant losing every other field's save too, with only a generic "something went wrong" and no hint which field was at fault. Fixed with a client-side pre-check (min <= max, only relevant in `range` mode) using the same `run()`/`friendlyErrorMessage()` pipeline every other error already goes through, rather than a second, parallel validation mechanism — the invalid combination now can't reach the server from the real UI at all, and the message names the actual problem.
+
+### 0.18 The Phase 1 cron jobs, actually built (2026-09-09)
+
+Section 8.5's retention table already promised "1 hour hard ceiling via cron" for the `incoming` bucket and "purged 24 hours after expiry" for unused upload tickets; section 6.3's immutable-columns comment already named "the nightly age refresh" as a legitimate caller of the bypass GUC; section 7.25 already listed `purge_incoming`, `purge_upload_tickets`, and `refresh_ages` as if operating. Grepping `app/supabase` and `app/src` found none of them: no `pg_cron` extension, no scheduled jobs, no `/api` route of any kind. Section 0.6's finding 2 (line 88 as it stood) had, without saying so explicitly, mentally filed `purge_incoming` under "the other cron infrastructure... that Phase 4 builds" — which is also where section 14's Phase 4 entry put "purge routes across all three storage buckets, the ticket table" — even though section 14's own Phase 1 entry never listed any cron job as deferred, and three separate parts of this document were describing the same missing thing three different ways rather than agreeing on when it ships. Fixed by building what Phase 1's own schema actually supports, and correcting every place that disagreed about it rather than adding a fourth description:
+
+- **What Phase 1 can build, because the tables already exist:** `refresh_ages` (`profiles`/`profile_private` exist), `purge_upload_tickets` and `purge_incoming` (`upload_tickets` and the `incoming`/`video-incoming` buckets exist), `purge_verification_selfies` (`verifications` exists). All four are built in `20260909050000_phase1_cron_jobs.sql`.
+- **What still isn't buildable, correctly:** `expire_likes` and `purge_feed_items` need `likes`/`feed_items` (Phase 2, already listed there as "expire and purge jobs"); `connection_inactivity` and `purge_ended_messages` need `connections`/`messages` (Phase 3, already listed there as "inactivity job"); `purge_date_plans` and `purge_deleted_accounts` need `date_plans`/`deletion_requests` (Phase 4, already listed there). None of this is a new decision — section 14 already gated each of these behind the migration that creates their table. The only thing that changed here is that `purge_incoming`, `purge_upload_tickets`, and `refresh_ages` are no longer miscategorized alongside them.
+- **`purge_incoming` corrected from a bug the running stack itself would have caught.** Section 7.25's table header reads "(pg_cron unless noted)," implying `purge_incoming` is plain SQL like `purge_upload_tickets`. It cannot be: `storage.objects` carries a `BEFORE DELETE` trigger, `storage.protect_delete()`, that raises `Direct deletion from storage tables is not allowed. Use the Storage API instead` for exactly this reason — confirmed by reading the trigger definition on the running local stack before writing any migration, not assumed from general Supabase knowledge. Real Storage byte deletion in this codebase happens exactly one way: the secret key, from a Next.js route, via the Storage API (`service.storage.from(bucket).remove(...)`), the same pattern `processUploadedImage`/`processUploadedVideoPrompt` already use and section 4.2's trust boundary #4 already restricts secret-key use to. `purge_incoming` and `purge_verification_selfies` now join `purge_deleted_accounts` as "noted" exceptions in section 7.25's table, each naming its own route. `purge_upload_tickets` and `refresh_ages` touch ordinary Postgres rows only and stay plain `pg_cron`, exactly as written.
+- **Two new routes, not one.** `purge_incoming` runs hourly and touches nothing else; `purge_verification_selfies` runs daily and is specified as sharing a route with `purge_deleted_accounts`. So: `/api/cron/purge-incoming` (hourly) runs only `purge_incoming`; `/api/cron/purge` (daily) runs `purge_verification_selfies` today and will also run `purge_deleted_accounts` once Phase 4 builds `deletion_requests` and `private._purge_user()`, exactly as section 7.25 already specifies. Both routes check the `CRON_SECRET` bearer secret `.env.example` already reserved a slot for, and neither route existed until now.
+- **The listing stays SQL, the deleting stays Storage API.** Each route calls one narrow, `service_role`-only Postgres function (`public.list_stale_incoming_objects()`, `public.list_stale_verification_selfies()`, `public.clear_verification_selfie_path()`) that only reads `storage.objects`/`verifications` and, for the last one, nulls a column — never a `DELETE`. The route does the actual removal client-side with the secret key, then calls the clear function only after the Storage call succeeds, the same "Storage first, then record it" ordering `processUploadedImage`'s own cleanup step already follows. Postgres can read `storage.objects` directly regardless of the Data API's exposed-schema restriction (that restriction governs PostgREST routing, not what a `SECURITY DEFINER` function owned by `postgres` can query inside the database), so this needed no change to `api.schemas` in `config.toml`.
+- **`purge_verification_selfies`'s effect, read correctly.** Its section 7.25 cell — "delete Storage objects for verifications decided more than 1 day ago and null selfie_path" — is two effects joined by "and," not two conditions: delete the selfie object for any verification whose `decided_at` is over a day old and whose `selfie_path` is still set, then set `selfie_path` to null. Matches section 8.3's "deleted within a day of the decision" exactly.
+- **Line 88's own finding corrected.** It named `purge_incoming` as the job that would eventually sweep `photos`/`verification` for objects orphaned by a `process_upload` failure after the Storage write already succeeded. That sweep is a different, harder problem — it requires diffing a Storage listing against `photos`/`verifications` rows to find what's unreferenced, not just aging out anything past a timestamp — and correctly stays deferred to Phase 4 per section 15's own entry for it, unchanged by this section. `purge_incoming` itself is the simpler job section 7.25 always described: age out the `incoming`/`video-incoming` buckets, unconditionally, past 1 hour. The two were conflated in the first write-up of finding 2; they are not the same job, and only the simpler one is built here.
+- **Two stale cross-references fixed in passing**, both pointing at section 7.19 (`pause_account`/`unpause_account`) where section 7.25 (the cron table) was clearly meant: line 88 above, and the two `purge_incoming` mentions in `processUploadedImage`'s and `processUploadedVideoPrompt`'s Storage-cleanup comments in `onboarding/actions.ts`.
+- **12 new pgTAP tests** (`50_phase1_cron_jobs.sql`) cover `refresh_ages`'s bypass-guarded update, `purge_upload_tickets`'s used/expired-unused conditions, the two listing functions' age/decision-window filtering and bucket scoping, `clear_verification_selfie_path`, and that `authenticated` and `anon` get a permission error, not a result, calling any of the three `service_role`-only functions — the same negative-grant shape section 11.1 already requires elsewhere.
+
+### 0.19 The video prompt has never actually worked in a real browser, until now (2026-09-09)
+
+Found while checking `proxy.ts` for an unrelated task (drafting the CI workflow section 11.4 already specifies but was never built), not by testing the feature itself again. `proxy.ts` (section 9.3) was written in Phase 0, before any audio/video recording existed, and was never revisited when the video prompt (section 0.14) was added later. Two of its header values directly contradict what that feature needs:
+
+- **`Permissions-Policy` set `microphone=()`** — an empty allowlist, which per the spec disables the feature "in top-level and nested browsing contexts" regardless of origin, not merely for third parties. Every call this feature makes to `getUserMedia({ video: true, audio: true })` would have had its audio track refused by the browser itself, in every real deployment, for every user — not a corner case, the ordinary path.
+- **The CSP had no `media-src` directive**, so `<video>` playback fell back to `default-src 'self'`, which does not cover `blob:` URLs; `connect-src` had the same gap. The review step's own `<video src={previewUrl}>` (a `blob:` URL, by construction, since it's the just-recorded clip before upload) and the poster-frame capture's offscreen `<video>` element would both have been refused by the browser, silently, with no path forward — exactly the "Couldn't capture a preview frame" error path in `wizard.tsx`, which was written defensively for a slow device, not identified at the time as the only path this bug left available. `img-src` already listed `blob:` correctly, from Phase 0's own photo-preview use of it; `media-src` was simply never added when video arrived.
+
+Both were caught only because this document's own image-preview and mic-permission handling gave something to compare against, not because the video prompt's own review cycle (section 0.15) tested a real browser's enforcement of these two headers — it tested the application logic (magic-byte sniffing, RLS, ticket handling) thoroughly and correctly, but every live verification pass, including the one in section 0.15, ran inside a tool sandbox that independently blocks camera/microphone access for its own unrelated reasons, and a synthetic-camera workaround used to get past that sandbox never exercised these specific headers because canvas-based streams don't require microphone permission at all unless a real audio track is attached the same way a real recording would. The first time a real audio track and a `blob:`-sourced video element were both exercised together, end to end, was after this fix, not before it — confirmed with a genuine record → poster-capture → upload → save round trip producing a real `video_prompts` row, not just each piece checked in isolation.
+
+Fixed: `Permissions-Policy` now reads `microphone=(self)`, matching `camera=(self)` immediately next to it. The CSP gains `media-src 'self' blob:;` and `connect-src` gains `blob:`. No other header changed. This is a two-line fix to a bug that would have made an already-shipped, already-reviewed feature nonfunctional for every real user, caught only by accident while working on something else — worth naming plainly rather than folding quietly into the CI work that surfaced it.
+
+### 0.20 CI has been red since Phase 0, undetected all this time (2026-09-09)
+
+Two separate, false claims got made about `.github/workflows/focus-ci.yml` before this entry: first, that it needed to be built from scratch (it didn't — it has existed, at the repo root, since the very first Phase 0 commit); then, correcting that, that it simply didn't exist at all, based on only having checked inside `Dating App/` rather than the actual repository root one level up. Both were wrong. What's actually true, checked directly against `gh run list` rather than assumed either way: the workflow has run on every push to this PR's branch since Phase 0, and failed every single time, in about 25 seconds — meaning it never once got past the second step, and nobody, across the entire Phase 0/1 build, checked its actual run status until now.
+
+Two real, previously-invisible bugs, both fixed:
+
+- **`pnpm exec tsc --noEmit` failed on `Cannot find name 'LayoutProps'`, every run.** Next.js 16 generates route/layout/page prop types (`LayoutProps`, used in `src/app/layout.tsx`) into `.next/types` as a side effect of `next dev` or `next build` — never as a side effect of `tsc` itself. Every machine this had ever been locally typechecked on, this session included, already had a `.next` directory sitting around from an earlier `next dev`/`next build`, so local `tsc --noEmit` always silently benefited from types a genuinely clean checkout doesn't have yet. Fixed by adding `next typegen` (a real, lightweight, build-free Next.js CLI command for exactly this) as its own step immediately before Typecheck, confirmed against a from-scratch `rm -rf .next` locally before trusting it.
+- **The contract-migration guard, several steps later, was never once reached, and could not have passed if it had been.** It diffs against `origin/main`, but the checkout step never set `fetch-depth`, so `actions/checkout`'s default (`1`) fetches only the triggering commit — `origin/main` would not exist in that checkout at all. Fixed by setting `fetch-depth: 0` on checkout.
+
+Also tightened while looking at this file: `pnpm audit --prod` was non-blocking (`|| true`, commented "advisory until the first release") — Phase 1 has been live on the remote Supabase project since section 0.6, so that deferral no longer holds; now `--audit-level high`, actually failing the build, matching section 9.8's own wording. Added the one piece of section 11.3 that was buildable without a Playwright/Vitest harness this project doesn't have yet: a header-presence and nonce-freshness check against a real `next start` of the build's own output, deliberately skipping only the Turnstile-script-tag half of that same bullet, since Turnstile itself still isn't wired into any page (unchanged from section 0.6's own deferred-items list).
+
+Not fixed here, on purpose: `pnpm test` (Vitest, section 11.2) and a Playwright smoke test (section 11.3) both stay exactly as absent as they already were — `--if-present`/simply not present — since nearly everything both sections list to test is Phase 2+ functionality (matching, chat, connections) that doesn't exist in this codebase yet. Writing tests for functions that don't exist isn't caution, it's noise; both get built alongside the phases that give them something real to assert against. Also not done here: the "merge to `main` additionally runs `supabase db push`" half of section 10.2/11.4 — it needs a `SUPABASE_ACCESS_TOKEN` repository secret only the project owner can create, the same category of manual step already flagged for Turnstile and `CRON_SECRET`.
+
+The standing lesson, not just for this file: a CI configuration that has never been watched run is not a safety net, it's a claim. This should have been checked the first time it was written, not the eleventh.
+
+### 0.21 The `pnpm test` step gets something real to run (2026-09-09)
+
+Section 0.20 left `pnpm test --if-present` correctly silent, since almost everything section 11.2 lists to test is Phase 2+. But section 11.3's own list — "zod rejection of oversize and malformed input; error codes never contain SQL" and the upload route's "byte sniffing," ticket-id-only acceptance, and sanity-ceiling checks — is Phase 1, already shipped, and was covered so far only at the database layer (pgTAP), never at the application layer where these checks actually run first.
+
+`actions.ts`'s `"use server"` directive only allows async server actions as exports (confirmed by Next.js's own build-time restriction, not assumed), so none of its pure validation logic — the zod schemas, the byte-size ceilings, `sniffVideoFormat` — could be exported for a test file to import. Moved verbatim, not rewritten, into a new plain module, `upload-validation.ts`; `actions.ts` now imports from it instead of defining it inline.
+
+18 new Vitest tests (`upload-validation.test.ts`) cover `sniffVideoFormat` against real WebM/MP4 signatures, an ordinary image, and short/empty/garbage buffers; `ticketIdSchema` against a genuine `crypto.randomUUID()` value, a malformed string, a SQL-injection-shaped string, and a storage path passed where only a ticket id belongs (spec 11.3's own example); and `promptTextSchema`'s boundary at exactly 200/201 characters and its trim-then-validate order. One test caught a real fixture mistake before it shipped, not an application bug: zod v4's `.uuid()` validates the actual RFC 4122 version/variant nibbles, which the all-same-digit fixtures used throughout this project's own pgTAP suite (`11111111-1111-1111-1111-111111111111`) don't satisfy, even though Postgres's `uuid` column type accepts them without complaint. A real ticket id, always generated by `gen_random_uuid()`, is never shaped that way in production — confirmed by checking what that function actually generates, not assumed — so this was a test-fixture-authenticity lesson, not a gap in the application. Also bumped `@types/node` from `^20` to `^24` (matching the Node version CI already runs) to satisfy Vitest 5's own peer requirement, which surfaced as a real, if minor, version mismatch the moment Vitest was installed.
+
+`focus-ci.yml`'s existing `pnpm test --if-present` step now actually runs these on every push, unchanged otherwise — except that "runs" first meant "fails," a third real CI bug found only by watching the actual run: `pnpm test --if-present` (flag placed after the script name) forwards `--if-present` through to the script itself once one genuinely exists, and Vitest rejects it as an unknown CLI option. `pnpm --if-present run test` (flag before `run`) is the form pnpm actually consumes as its own; confirmed locally with the script both present and absent before pushing the fix again.
+
+### 0.22 A Playwright smoke test exercises the journey pgTAP and Vitest can't reach (2026-09-09)
+
+Sections 11.3 and 11.4 step 6 called for an end-to-end test against a real running build — something neither pgTAP (85 tests, database layer only) nor the Vitest suite added in 0.21 (18 tests, a slice of application-layer validation logic) actually exercises: the real signup-to-submission journey through rendered pages, client-side navigation, and a genuine Supabase Auth OTP round-trip. Built `playwright.config.ts` and `e2e/onboarding-smoke.spec.ts`: sign up with a fresh email via OTP (retrieved from local Mailpit's REST API, the same mechanism used for manual testing all session), then drive every onboarding step in order — age gate, consent, basics, prompts, capacity, non-negotiables, heritage, genetic compatibility, photos, selfie — through "Submit for review," asserting the landing on `/onboarding/pending`. Deliberately out of scope: admin approval, which needs a real aal2/TOTP-authenticated session and stays a manual test-plan item until a seeded test-admin TOTP secret exists to automate against.
+
+Two things kept this tractable instead of brittle. `SelfieStep` uses a plain `<input type="file">`, not `getUserMedia` camera capture — confirmed from its actual source, not the separate HTML prototype examined earlier this session, whose copy diverges from the real component in three places the test's first draft wrongly copied (HeritageStep and HealthStep's nonexistent "Skip" buttons, SelfieStep's actual "Start verification" label) and had to be corrected against `wizard.tsx` directly before the test would pass. And a 1x1 PNG byte buffer is real enough for Sharp to decode, exercising the actual byte-sniffing path from section 9.4 rather than a filename-extension shortcut.
+
+Wired into `focus-ci.yml` as two steps placed right after the existing pgTAP step, since both need the same real local Supabase stack already started there — unlike the later Build and headers-check steps, which deliberately use canary values and never call a real backend: `playwright install --with-deps chromium`, then `playwright test` with `supabase status -o env`'s output translated into the app's expected env var names via `sed`/`eval`, plus a canary `CRON_SECRET`.
+
+Verified locally three times before this ever reached CI: twice against a reused dev server (8.3s, then 5.6s), and once with `CI=true` forced, which makes Playwright spawn its own `next dev` instead of reusing one — the code path CI actually runs, requiring a brief stop/restart of the locally-running dev preview to free port 3000 for it. After each run, queried the database directly (`docker exec supabase_db_app psql`) to confirm the resulting profile actually reached `status='pending_review'` with the right name, city, photo, and selfie flag, not just that the test's own assertions passed. Not yet verified: the Playwright-in-CI step actually running on GitHub's own Ubuntu runner, where `--with-deps`'s Chromium system-library install has no local equivalent on this Windows machine to test against — per 0.20's own lesson, that only counts as verified once watched passing in a real run.
+
+### 0.23 The one RPC that decides who becomes visible had never had its actual outcome checked (2026-09-09)
+
+Prompted by "what's next" after the Playwright PR, not a new feature request: an audit of Phase 1's own exit criterion ("a new user can complete onboarding and be approved by an aal2-enrolled admin") against the real code, not the spec's description of it. The admin queue UI, the aal2/TOTP enrollment flow, and `admin_review_verification()` itself are all real, wired, working code -- not a gap. But the pgTAP coverage of that function (`10_phase1_rls_and_functions.sql`, `20_phase1_review_fixes.sql`) only ever asserted the gate (non-admin and aal1-admin calls raise `forbidden`) and the idempotency guard (`already_decided` on a second call). Nothing asserted what an actual approval or rejection does to the profile it's about: grepping the whole suite for `verified_at`, `'active'`, or `admin_audit` returned zero assertion hits before this entry.
+
+Worse than merely untested: the one existing call to `admin_review_verification('approved', ...)` in `20_phase1_review_fixes.sql` (kept only to set up the idempotency check) runs against a profile that was never actually moved to `pending_review` first, since nothing in that file calls `submit_for_review()`. The function's own `where status = 'pending_review'` guard on its profile UPDATE means that call silently did nothing to the profile -- a fact nobody had verified either way, since nothing asserted the profile's resulting state.
+
+Added eight new pgTAP assertions to the same file, covering both a real approve and a real reject against profiles genuinely in `pending_review`: approving sets `status='active'` and `verified_at`; rejecting reverts `status` to `onboarding` (so the user can resubmit) and never touches `verified_at`; both write the correct `admin_audit` row (admin id, action, target, and the decision/note actually passed in); and, made explicit rather than left as an unexamined accident, that approving a verification whose profile isn't in `pending_review` is a safe no-op on the profile, not a silent activation or an error.
+
+Getting the fixture right surfaced two more real things about this codebase, not bugs in it: `profiles_enforce_immutable` guards `status`/`verified_at`/`age` against direct writes regardless of role, requiring the same `app.bypass_profile_guard` GUC `admin_review_verification` itself sets around its own UPDATE; and a second, separate, unconditional trigger, `profiles_require_photo_for_review` ("the hard backstop regardless of call path," per its own comment), rejects any transition into `pending_review` for a profile with no photo at position 1, with no bypass at all. Both discovered only by hitting them, not by reading the schema ahead of time first. Verified by running the full pgTAP suite (all six files) directly against the local stack's Postgres container: 93 of 93 pass, up from 85, with zero regressions elsewhere.
+
+### 0.24 Phase 1 marked complete; the two remaining non-code items get real plans instead of a deferred-list bullet (2026-09-09)
+
+Two of section 15's deferred decisions don't depend on the Phase −1 patent question and don't need to wait for it: the production email provider, and whether iOS Safari's PWA camera actually works for verification selfies. Both resolved (one decided, one planned) today, alongside formally marking Phase 1 complete against its own section 14 exit criteria.
+
+**Production email: Resend, decided.** Supabase's own default SMTP is 2 messages/hour -- confirmed against Supabase's current auth-smtp docs, not just cited from memory -- which is fine for local development (where it already runs, via the local Inbucket/Mailpit stack this whole session's manual and Playwright testing has used) and nowhere near workable for real signups. Resend is one of Supabase's own listed compatible providers, uses a standard SMTP relay (`smtp.resend.com`, username `resend`, password the API key -- confirmed against Resend's own docs), and Supabase's guidance explicitly recommends a dedicated auth subdomain separate from any marketing sending, plus SPF/DKIM/DMARC on it. None of the actual setup is something this assistant can do: creating a Resend account, verifying a domain, adding DNS records, and entering the resulting SMTP credentials into the Supabase project's own dashboard (not exposed through any tool available here) all require the project owner's own hands. `docs/ops/2026-09-09-production-email-resend-setup.md` is the concrete runbook and acceptance checklist for doing that.
+
+**iOS PWA camera capture: a real test plan, not yet a real answer.** This was already flagged as a risk in section 15 before any outside input raised it -- the concern isn't new. What's new is a concrete device-test matrix (`docs/testing/2026-09-09-ios-pwa-camera-verification.md`), and building it surfaced a real mismatch worth correcting before testing starts, not after: a single undifferentiated matrix (permission prompt, front/back switch, pose overlay, capture, retake) would have tested the wrong shape of UI. Reading `wizard.tsx` directly shows two components with genuinely different risk profiles -- `SelfieStep` (required) is a plain `<input type="file" capture="user">` that hands off to iOS's native camera sheet and never opens an in-page stream; `VideoPromptStep` (optional) is the one that actually calls `getUserMedia({video, audio})` with a live in-page `<video>` preview, which is what the well-documented WebKit standalone-PWA bugs actually apply to. Neither has a front/back switch in the real UI at all. The plan is split into two matrices accordingly. The plan deliberately does not build a Safari-handoff fallback flow yet: doing that before real testing has shown it's needed would be inventing a feature against a hypothetical, not a finding. If the test matrix turns up a real failure, that's the point at which a fallback gets designed.
+
+**Phase 1: marked complete** in section 14, with the admin-approval E2E gap recorded there as a known, deliberate test-automation limitation rather than a blocker, and a one-time manual admin-approval journey added as a pre-launch regression requirement.
+
+---
+
+## 1. Purpose, goals, non-goals
+
+### What this is
+
+A dating web app where each person chooses how many people they can genuinely get to know at once (1, 2, or 3), sees a handful of pre-screened profiles a day, and stops appearing to anyone new the moment they have no open slot left. It exists to remove the illusion of options that makes people reject everyone and commit to no one. The category is intentional dating; the mechanism is that attention is finite and the product makes you choose where yours goes.
+
+### Goals, in priority order
+
+1. **Attention, not volume.** Every mechanic reduces parallel options: the capacity limit, the daily browse cap, full removal from discovery while focused, clearing other pending likes the moment capacity fills, no like counts, no feed.
+2. **Serious people first.** Non-negotiables (kids, faith and practice level, politics, habits) are free, set at onboarding, shown above photos, and enforced mutually before anyone appears in anyone's feed.
+3. **Heritage on the user's terms.** Self-written background, community or tribe, origin, language, and raised-in fields. Heritage affects matching only when the user switches it on in settings, and then each rule carries an importance the user chose: nice to have, important, or must. The system never infers, ranks, or optimises on heritage by itself.
+4. **Nothing to collect.** No validation loop: no like counter, no "who liked you," no posting, no social handles, no visible reputation score of any kind, and no backlog of old admirers waiting behind a closed door.
+5. **Safety and privacy as design constraints.** Every rule above is enforced in the database, not the browser. Sensitive attributes (faith, ethnicity, genotype, who you want to meet, location) are minimised, access-controlled through functions rather than raw table access, and deletable. Every function that is not meant to be called directly by a client lives where a client cannot reach it, not merely where it is labeled as such.
+6. **Accountability, held internally.** Connections can end with an optional closing note. How people end connections is tracked to catch abuse and repeat ghosting; it is not displayed as a score, because a displayed score creates pressure to keep talking to someone rather than end things honestly.
+7. **Focus limits options. It must never limit exits.** Capacity limits who you can start something new with. It must never make it harder to leave something that isn't working, isn't safe, or has simply run its course. Ending a connection, blocking, and reporting are always available immediately, with no note required, no timer to wait out, and no reputation cost. Where this document's mechanisms ever seem to conflict with that sentence, this sentence wins.
+8. **Explain, don't score.** Every candidate is ordered by an internal reciprocal score that a person never sees. What they see instead is a short, factual account of what the two of them share, never a percentage, never a claim that an algorithm has found their soulmate. A number that precise about something this uncertain is a lie dressed as precision.
+9. **Contact information is shared only deliberately, one method at a time, and never mutually by default.** Focus never reveals a signup email, a real name beyond what a person chose to show, or any way to reach someone outside the app, unless that person explicitly chose to share it, in that moment, with that specific person. Sharing never happens automatically, is never a side effect of matching or messaging, and one person sharing never grants the other's information in return.
+
+### The product constitution
+
+Eleven rules, extracted from the goals above rather than added to them (sections 0.7, 0.11). No feature, in any future phase, may violate one of these without first amending this section explicitly, in writing, with a reason — the same standard section 12.1 already holds code to.
+
+1. **Capacity is a ceiling, not a quota.** Choosing 3 means room for at most three, never an expectation of three. See "Daily loop" above.
+2. **One active connection means one real person receiving your attention**, not a ranked shortlist held in reserve. See "Nothing to collect," goal 4.
+3. **Focus limits options. It must never limit exits.** Goal 7, verbatim.
+4. **No backup bench while Focused.** Every other pending like, in either direction, is cleared the instant the last slot fills — not paused, not held. See "Daily loop," and section 2.9 below.
+5. **Safety overrides every normal interaction rule.** Reports, restriction, and "I felt unsafe" always bypass the ordinary End/Block flow and any waiting period. See sections 2.4-2.6.
+6. **No paid visibility, paid filters, paid capacity, or boosts.** Permanent, not a v1 decision — see below.
+7. **The algorithm recommends, humans decide.** Ranking orders candidates; a person clicks Interested or Not for me. No auto-matching, no opaque model, ever. See goal 8 and the "No opaque AI" non-goal below.
+8. **Must-haves are never silently relaxed.** Only the person who set a must-have can loosen it, deliberately, on their own settings screen. See section 2.7.
+9. **Zero profiles is an acceptable recommendation result.** "You're caught up" is a correct, honest state, not a bug to paper over with a wider funnel. See section 2.7.
+10. **Personal contact information is never exposed automatically.** One method, one direction, one deliberate action every time. See section 2.8.
+11. **Health and genetic information is never part of a dating profile.** The one optional exception — genotype — is a private matching input only, for the specific rule the person themselves chose. Never shown to anyone, never a badge, never a filter menu, never sent anywhere it doesn't strictly need to go. See section 2.3, section 8.1.
+
+### A permanent commitment versus a v1 decision
+
+These are different promises and the document keeps them distinct:
+
+- **Permanent:** money will never change who you are eligible to meet, how visible you are, your capacity choice, or which filters you can use. There is no version of this product with a paid tier that sees more people, gets more slots, or gets better placement.
+- **v1 decision, not permanent:** there are no subscriptions, boosts, or fees of any kind at launch. If human selfie review or infrastructure costs become unsustainable at scale, the only monetisation compatible with the mission is a single flat fee that changes nothing about matching, visibility, or capacity for anyone who pays it. That decision is deferred; see section 15.
+
+### Non-goals for v1
+
+- Differential access of any kind tied to payment (see above; this is permanent, not just v1).
+- A friends or community lane, events, or a social feed.
+- **No opaque AI deciding compatibility in v1.** Recommendations are built from explicit mutual preferences, distance, activity, and a reciprocal ranking score (section 7.3), all of it inspectable and none of it hidden inside a trained model. A learned ranking model is a possibility for later, and only once there is enough real outcome data (whether people who connected actually met, and wanted to again) to train it on, never before, and never in a way that overrides a hard dealbreaker or infers a sensitive attribute a user didn't state.
+- AI conversation help, or personality tests.
+- Video calls, voice notes, or photo messaging inside chat.
+- Native iOS or Android apps.
+- Automated selfie verification. A human reviews every selfie.
+- Income, job, or education verification.
+- **General health information of any kind — chronic conditions, mental health, disability, fertility, STI status, medications.** The only health-adjacent field Focus ever collects is optional hemoglobin genotype (section 0.11, section 2.3), and even that is never shown to anyone, never a profile field, never a filter menu.
+- **Prompt polls, or any multiple-choice, entertainment-first profile element** (section 0.12). Real content, not a fun aside — every element on a profile competes for space in an already-constrained format, and a poll doesn't advance a serious-dating thesis the way a real prompt answer does.
+- A visible reputation, accountability, or "communicates respectfully" score of any kind.
+
+### Success measures (written before launch, none are engagement)
+
+- Share of connections that reach a first date (self-reported in the closing note or a post-connection prompt in a later version).
+- Share of connections ended with a note rather than faded.
+- Pairs who close their accounts together.
+- Zero unauthorised reads of another user's likes, messages, photos, or sensitive fields (verified by tests, not hoped for).
+- Zero cases in testing where a client can reach a function through the Data API that this document designates internal.
+
+The daily browse cap of 5 and the 1/2/3 capacity ceiling are both starting hypotheses, chosen from the research rather than revealed truth. Both should be revisited against the funnel (profile shown → connection → real conversation → date → second date), never against time-on-app or session count.
+
+---
+
+## 2. Product summary
+
+This section restates the product design so the architecture can be checked against it.
+
+### 2.1 Onboarding
+
+1. Sign in with a 6-digit email code or Google. No passwords exist anywhere in the system.
+2. Age gate: date of birth, 18 and over. Under-18 attempts are refused and the attempt is logged without the date.
+3. Consent, recorded as append-only events (section 5.2), each versioned and each separately explicit: terms, privacy policy, sensitive data (faith, heritage, seeking, politics), and, only if the user opens that section, genotype data (see section 8.1).
+4. Profile: first name, gender, who you want to meet, city, two to six photos with a face in the first, three prompt answers, occupation, education level, optional height.
+5. Capacity: 1 (default), 2, or 3.
+6. Non-negotiables, then optional heritage (off by default in matching, see section 2.3), then optional health section (genotype, off by default, its own consent).
+7. Selfie with a randomly assigned pose. Human review. Profile is `pending_review` until approved, then `active`.
+
+### 2.2 Daily loop, and the Available/Focused mechanism
+
+Every profile has a computed attention state, not a stored one:
+
+```
+available(p) := profiles.status = 'active'
+             AND paused_at IS NULL
+             AND open_to_new = true
+             AND active_connections(p) < capacity(p)
+focused(p)   := not available(p)
+```
+
+Capacity is a ceiling, not a quota: choosing 3 means "at most three people at once," never "the product expects three." A person with capacity 3 and two active connections has room for a third by the numbers, but may genuinely not want one yet, and shouldn't have to lower their capacity setting just to say so. **Open to new connections** (`open_to_new`, section 0.13) is a separate, self-service toggle for exactly this, named for the state a person wants to see rather than a double negative: turning it off closes the remaining slot immediately, on the person's own terms, without changing their capacity number, and turning it back on reopens it just as immediately. While it's off, a person with open slots by the numbers is still `focused` in every sense that matters: no discovery for them, and they don't appear as a candidate to anyone else either. Home simply says "You have room for one more connection whenever you're ready," with the choice to look or not left entirely to the person, rather than a gallery of introductions appearing the moment a slot opens.
+
+- **Discovery** shows up to 5 profiles a day, one full profile at a time, not a stack of cards to flick through: photo, non-negotiables, prompts, and a short, factual explanation of what the two people actually share, with two plain buttons, Interested and Not for me, not a swipe gesture. A swipe can exist later as an optional shortcut, but the visual language deliberately avoids anything that reads as a card game, because the research behind this product is specifically about what repeated quick judgment does to people's willingness to accept anyone at all. There is no going back once decided. Candidates are restricted to people who are currently `available`, checked both when a day's feed is first generated and again every time that feed is read back, so a person who becomes focused after being shown that morning is removed from the feed the next time it loads and, where possible, replaced so the day's allotment stays at 5. **A focused person never appears in anyone's discovery feed.**
+- **Ranking is reciprocal, and the strongest introduction is named.** Candidates who pass every hard non-negotiable (section 7.2) are ordered by a score that credits both sides' soft preferences about each other, not just the viewer's (section 7.3), so a good match doesn't get buried because it happens to be more appealing to Focus's model than to the general population. The single highest-scoring candidate each day is shown first and labeled Focus Pick, with the other four introduced simply as today's introductions; no percentage is ever shown, only a short line naming what the two of them share ("You're both looking for marriage. Both want children. 8 miles apart."), because a number that precise about something this uncertain would be a false promise, not information. One of the five is deliberately chosen from outside the top-ranked set rather than by score alone, so the feed doesn't quietly narrow itself into an ever-smaller caricature of whoever a person has liked before.
+- **"Not for me" and "Don't show again" are different.** Passing on a profile ("Not for me") is an ordinary, reversible-in-principle decision: Focus doesn't recycle it, but if that person's profile changes substantially and a long time has passed, it may be offered again later, only through the explicit reconsideration prompt in section 2.7, never by quietly reappearing in the ordinary five. "Don't show again," reached through a small menu rather than a prominent button, is permanent and immediate, for someone the user already knows, like an ex or a coworker, and never resurfaces under any condition. Neither of these is Block, which is a safety action covered in section 2.4 and ends an existing connection; "Don't show again" can be used on someone who was never a match at all.
+- **Waiting list.** When you have an open slot, people who liked you while they, and you, were both still available are shown one at a time before new discovery. Only likes from senders who are currently `available` are ever surfaced. You Like or Pass each surfaced item. There is no count and no list view.
+- **Likes and forming a connection.** A like is silent. The other person never sees a count and there is no "who liked you" screen. Sending a like requires both the sender and the recipient to be available at that exact moment, re-checked immediately before the like is created or a connection forms, closing the race where a person becomes focused between being shown a card and acting on it. Likes that go unanswered expire after 30 days. **A like may optionally carry a short note (section 0.12), tied to a specific prompt or photo** — up to 200 characters, referencing what prompted it ("You had me at doing absolutely nothing after lunch"). The note is held privately with the like, invisible to the recipient, exactly like the like itself; if and when the like becomes mutual, the note is surfaced as the connection's opening context, giving the first conversation something real to start from instead of a blank thread. A declined or expired like's note is discarded with it — never shown, never recoverable, same as the like it belonged to.
+- **When your last open slot fills, you enter Focused and every other pending like involving you, in either direction, is cleared, atomically, in the same transaction that forms the connection (section 7.7 step 5) — this is Starting Fresh.** Not merely paused: cleared. Anyone who had liked you and was still waiting, and anyone you had liked and were still waiting on, is let go. **This expires the opportunity, not the person** (section 0.10): a cleared like is not a rejection and creates no permanent record between the two people. Neither is ever told the other's like existed or expired — not a name, not a count, nothing framed as "here is who you gave up." If both are independently available and still mutually compatible once the ordinary 30-day like-history window (section 7.4) has passed, the daily feed may introduce them again like any other candidate, with no memory of the earlier, unresolved like. The cost is fewer eventual matches in the short term; the point is that focus means focus, not a queue with the lid on. A like that arrives moments too late — the target became Focused between being shown and being acted on — already returns `not_available` (section 7.5), the same generic outcome as if the target had paused, been restricted, or simply reached capacity hours earlier: "This introduction is no longer available." Never a message implying a race, a timestamp, or that someone specific claimed the last slot.
+- **When you're Focused,** discovery disappears for you too. No blur, no upsell, no queue count. Your home screen is your connection or connections. Your profile is not shown to anyone new, and nobody can send you a new like.
+- **A connection** is a private text chat plus each other's full profile. It ends when either person chooses to end it, and frees both slots immediately the instant each person's own count drops below their own capacity. How a connection can end, and what happens automatically when nobody acts, is covered in full in sections 2.4 and 2.5, because it turned out to need more than one sentence: capacity limits who you can meet, and it must never make it harder to leave.
+
+**Why this design differs from a profile that stays universally visible:** an earlier draft kept a focused user's profile visible to everyone and only hid the discovery feed on the viewing side, partly as a way to keep some daylight from the Sidekick patent's specific claim language, which requires making the at-limit user invisible and declining their outgoing likes. This revision instead removes focused users from candidate generation, and now clears their pending likes outright, because those are the correct product fixes for the backlog problem regardless of the patent. Whether this mechanism sits closer to or further from the patent's claims is exactly the kind of question that belongs to counsel, not to this document. See section 14, Phase −1: the entire visibility and clearing mechanism in this section is provisional pending that review, and the review must happen before section 7's functions are implemented.
+
+**Nothing to collect.** No like counts, no feed, no posting, no social handles, no visible score of any kind, no waiting queue that survives a focused period. Bios containing an Instagram handle or "add me on" are flagged for admin review.
+
+### 2.3 Profile and non-negotiables
+
+**Basics.** First name, age from date of birth, gender (woman, man, nonbinary, or self-described), who you want to meet (women, men, everyone), city with approximate distance, two to six photos with a face in the first, three short prompt answers instead of a free bio, occupation, education level, height optional.
+
+**Prompts, and an optional video (section 0.12).** Three prompts are required, one from each of three fixed categories, each offering a small curated set to choose from rather than one fixed question — a person picks the specific prompt within each category, then answers it, up to 200 characters:
+
+- **Who I am** (e.g. "A normal Sunday for me looks like...", "Something I'm proud of that isn't on my résumé...")
+- **How I relationship** (e.g. "When there's conflict, I usually...", "I feel most cared for when...") — the category static personality prompts never reach: Focus is for people who've already decided they want something serious, so this is worth asking directly.
+- **Where I'm going** (e.g. "In five years, I hope life looks like...", "The kind of family I'm hoping to build...")
+
+One optional video prompt may be added on top of the three required text ones: up to 30 seconds, recorded inside the app only (front or back camera), unlimited re-recording before publishing, no filters, no music, no imported video files. Playback is always user-initiated — a video never autoplays, in a feed or anywhere else. This is a materially larger engineering surface than the photo pipeline (no `sharp`-equivalent for video; needs its own Storage bucket, its own upload-ticket kind, and server-side re-encoding/dimension and duration caps analogous to but not reusing Phase 1's image pipeline) and is specified here as a deliberate, scoped addition to the existing profile system, not yet implemented — see section 14 for where it lands in the delivery plan.
+
+**Non-negotiables**, each with your own answer and, where marked, a "must match" switch that hides anyone outside your acceptable answers:
+
+| Field | Your answers | Must-match allowed |
+|---|---|---|
+| Relationship goal | Marriage, life partner, serious relationship | No, all three are serious. Casual is not offered. |
+| Kids | Want, don't want, open, have kids and want more, have kids and done | Yes |
+| Faith | Self-written label plus practice level: devout, practicing, cultural, not practicing | Yes, on label and on practice level |
+| Politics | Liberal, moderate, conservative, other, prefer not to say | Yes |
+| Smoking, drinking | Never, sometimes, regularly | Yes |
+| Timeline | Ready now, within a year, exploring slowly | Display only |
+| Would relocate | Yes, no, maybe | Display only |
+| Income band | Optional, five bands | Display only, no filter |
+| Height preference | Doesn't matter, taller than me, around my height, shorter than me, or a specific range | Yes, but `prefer` by default; `must` requires the same explicit second confirmation every other must-have already requires (section 0.9) |
+
+**Height preference is relative, not absolute, by default** (section 0.9): a person is asked how their preference relates to their own height, not for a raw number, matching the finding that a person's own height predicts their preferred partner height more reliably than any single population-wide target does. `prefer` never filters, only nudges `reciprocal_score` (section 7.3); `must` filters, same as any other must-have, and is never silently relaxed at pool exhaustion (section 2.7). Height is never used to compute a cross-population desirability signal; it only ever contributes to how well two specific people's own stated preferences point toward each other, the same rule heritage and every other soft preference already follows. On a card or full profile, height sits inline with occupation and education as plain text, never enlarged, bolded, or badged.
+
+**Heritage**, all optional, all self-written with suggestions as you type, so a Haitian, a Yoruba, and a Gujarati use the same fields: background, community or tribe, family origin country and region, island, or state, languages spoken, country raised in. A master switch, "Use heritage in who I'm shown," is off by default. When on, each heritage field carries an importance the user chose: nice to have, important, or must, with the acceptable values typed by the user. Nice to have and important never filter, only reorder; must filters. A separate switch, "Show heritage on my profile," independently controls whether others see the user's heritage values at all. The system never infers, ranks, or optimises on heritage on its own.
+
+**Genetic compatibility** (section 0.11; not "health compatibility" — that label was broad enough to make a reasonable person wonder whether Focus expected disclosure of diabetes, mental health history, HIV status, a disability, or any other medical condition, none of which it ever asks about or wants) lives in a collapsed, off-by-default section, with its own separate consent (see section 8.1). The only thing it collects is hemoglobin genotype (AA, AS, SS, AC, SC, or "I don't know"), the specific inherited-condition case ACOG's carrier-screening guidance and the CDC's sickle-cell-trait guidance both describe: a person with the trait is generally healthy, but two carriers together have a 25% chance per pregnancy of a child with the disease. A plain-language note says this, without ever calling any single genotype or pairing simply "incompatible" — Focus is not a genetic counselor, and ACOG's own guidance is to offer counseling when both partners carry a condition, not to hand down a verdict. It is never suggested or gated based on a user's heritage answers; the user opens it or does not. The section's own onboarding copy states the privacy guarantee before asking for anything: *"You may privately add genetic information for Focus to use when checking compatibility. Your information is never shown on your profile. Other people cannot see your result, or know whether you completed this section."* A `must` switch lets the user exclude genotypes they're not open to from their own candidate pool (section 7.2); nothing here is ever shown to, or inferred by, anyone else — see section 8.1's exception for exactly what that means mechanically.
+
+**Verification.** Selfie with a randomly assigned pose, reviewed by a human. Optional work or school email verification comes later, not in v1.
+
+### 2.4 Ending a connection: End, Block, and Report
+
+These are three different actions with three different guarantees, confirmed against how Hinge, Tinder, and Bumble draw this same line. Conflating them, which the first two drafts of this document effectively did by routing everything through one `end_connection` function, would have meant a person fleeing harassment goes through the same "pick a reason, write a note" flow as someone who just didn't feel a spark.
+
+**End Connection.** For no chemistry, differing goals, a change of mind, or a date that was simply bad but not unsafe. Either person can end at any moment, with no waiting period. A short closing note is offered, never required: "Would you like to leave a short closing note?" with preset options (not a romantic fit, no chemistry after meeting, our goals don't align, taking a break, something else) or free text up to 300 characters, or nothing at all. If nothing is given, the other person sees a plain "This connection has ended." Both slots free immediately. This is the ordinary, expected outcome of giving one person real attention and it not working out, and the product should never make it feel like a failure. **Once two people have connected and that connection ends, however it ends, they are never shown to each other again**, matching how both Hinge and Tinder treat unmatching as permanent rather than something to revisit. There is no reconnect or rematch feature in v1.
+
+**Block.** For "I do not want this person to contact or encounter me again," whether or not anything unsafe happened. No note, no explanation, no reason given to either the blocked person or stored against them beyond the block itself. The connection ends, messages stop, both profiles become mutually invisible everywhere (feed, waiting list, search), any likes between them are gone, and the slot frees. The blocked person is shown the same generic "This connection has ended" and has no way to learn a block occurred, matching how Tinder and Bumble both keep blocking indistinguishable from an ordinary unmatch on the receiving end.
+
+**Report.** For behavior that Focus, not just the reporting user, needs to know about: rudeness, harassment, threats, stalking, assault, or anything that felt unsafe. A report can be filed alongside a block (most safety reports should be) or on its own, and does not require an active connection: a past connection, however it ended, can still be reported, and for genuine safety concerns this is not bound by how long ago it happened. Reports carry a severity, described fully in section 5.1 and 7.13, and the more serious tiers trigger an automatic, immediate restriction on the reported person's account while a human reviews it. Filing a report is never shown to the reporter as a verdict: Focus is not a court, and the interface never claims to have confirmed or denied what was reported. It only confirms that a human will look at it.
+
+### 2.5 Pausing, deleting, and being restricted
+
+Three different things can make a person stop being available, and they behave differently on purpose:
+
+- **Pausing** is voluntary and short-term: a settings toggle a person flips themselves. A paused person disappears from everyone's discovery and waiting list immediately, the same way a focused person does, and cannot be matched with. It does not end an existing active connection, because someone stepping away for a few days might still want to say so to the one person they're actually talking to. But the other person in that connection is never left to wonder or to wait: their side of the chat shows "This person has paused their account" plainly, with an immediate, one-tap End Connection action right there, not gated behind the normal inactivity timeline in section 2.4. An existing connection never traps the other person just because one side stepped back.
+- **Deleting the account** ends every active connection immediately, exactly as before, with the other person seeing a neutral "This person is no longer on Focus. Your connection has ended," never a timestamp or any detail that turns account deletion into forensic relationship analysis.
+- **Being restricted** is not something a person does to themselves: it is the automatic, immediate consequence of a high or critical severity report landing against their account (section 2.4, section 7.13), pending human review. A restricted person keeps their existing connections intact at the connection-status level, so a partner unrelated to the report isn't confused by a sudden termination, but cannot send new messages anywhere on the platform, cannot appear in anyone's discovery, and cannot form new connections until an admin clears or confirms the report. Every partner affected sees a generic "This connection is under safety review and messaging is paused for now," with the same immediate End Connection or Block available to them regardless. Restriction never confirms what was reported; it is a precaution, not a verdict, and an admin resolves it one way or the other, never leaves it standing indefinitely.
+
+### 2.6 Meeting up: a private check-in, and a deliberately small date-safety feature
+
+Focus has no way to know when two people actually meet in person, and it should not try to find out through location tracking: that would contradict the privacy stance in section 8.2. Instead, either person can mark "We met" inside their connection at any time they choose, entirely privately; the other person is never told that this was tapped. Marking it opens a short, private check-in, seen by nobody else: would you like to see them again (yes, not sure, no), and how did it feel, with a clearly separate "I felt unsafe" option that skips straight past ordinary breakup language to Block, Report, and a plain link to local emergency services and to sharing with a trusted contact. Answering "no" here is just a fast path into the ordinary End Connection flow from section 2.4; the other person never learns "they said no to another date," only that the connection ended, exactly as any other end would look to them.
+
+For the date itself, Focus offers a narrow, deliberately unambitious safety feature modeled on Bumble's Share Date rather than Tinder's Noonlight, because building a real emergency-monitoring service is a liability, an operational burden, and a promise of rescue this product has no business making. Inside an active connection, either person can fill in a plan (where, when, and an expected end time) and get back a short, shareable summary naming their match by first name and verification status, which they send themselves, through their own phone's own share sheet, to whomever they choose, exactly as they could already do by texting a friend, just formatted cleanly. Focus never sends this itself and never stores the friend's phone number or email; it only holds the plan's details briefly, for the duration of the date, so it can offer one check-in prompt near the expected end time asking simply "everything okay," with "I need help" leading to the same safety-first screen as "I felt unsafe" above. This is a nudge toward a habit RAINN already recommends, not a monitoring system, and the copy says so plainly rather than implying a promise the product cannot keep. **The same near-expected-end-time moment doubles as the one proactive invitation into the "We met" check-in above** (section 0.13): answering "everything okay" with a plain yes offers the check-in as an immediate next step, rather than leaving it purely to memory as the only way in. It remains entirely optional and dismissible either way, and a person who never created a date plan can still reach the same check-in by tapping "We met" themselves at any time.
+
+Similarly narrow: once a connection's relationship progress reaches "Planning to meet" or later, either person may see one private, dismissible, one-time line inside their connection, unrelated to whether either of them actually used the genetic-compatibility section — Focus never knows or reveals that: *"Thinking about a future together? If biological children are part of your plans, you may want to discuss genetic carrier screening with a qualified healthcare professional. Focus cannot confirm medical compatibility or replace genetic counseling."* Matches ACOG's own timing guidance (screening and counseling ideally before pregnancy, not on first contact) far better than surfacing anything genetic at the stranger stage. This is inline copy inside the existing connection view, not a new screen.
+
+### 2.7 When the pool runs out
+
+In a smaller city, a narrow age band, or a specific faith or diaspora preference, a person will eventually see everyone who is currently mutually eligible and available. This is not an edge case to paper over with a wider funnel that quietly reintroduces people already rejected; it is a state the product should name honestly, confirmed against how differently Tinder and Bumble handle it today by expanding distance and preferences automatically unless a person opts out.
+
+When there is nobody left to show, Focus says plainly: "You're caught up. You've seen everyone currently available who meets your must-haves. New people will appear here as they join or become available." Three explicit choices follow, none of them automatic:
+
+- **Keep my preferences and wait.** Do nothing; be told when someone genuinely new becomes eligible.
+- **Explore a little farther.** Widen the distance radius, only with the person's own explicit action, never silently.
+- **Review my preferences.** See which soft, non-must heritage or lifestyle preferences are narrowing the pool the most, and loosen them if desired. A must-have is never weakened without the person doing it themselves, deliberately, on this screen.
+
+Only from this caught-up state, never mixed into the ordinary daily five, Focus may also offer a small number of previously passed profiles for reconsideration, and only when a real reason exists: the passed person's profile has materially changed since the pass (a new photo, a changed prompt, or an updated non-negotiable answer), at least 90 days have passed, and the two are still mutually compatible under current preferences. This is framed as "8 people you passed months ago have updated their profiles. Review them, or keep your passes as they are," and the person decides; nothing reappears on its own. A profile marked "Don't show again" is never included in this, regardless of time or changes.
+
+Optionally, after a handful of profiles in a session, Focus may ask a single lightweight, fully optional question: "Anything missing from today's people?" with a short checklist (attraction wasn't there, lifestyle wasn't right, felt too different, felt too similar, distance, values, nothing specific). This exists to give Focus qualitative signal about what a v1, non-learning ranking system might be missing, not to interrogate a person about why they rejected someone; there is no "why didn't you like this specific person" prompt, ever.
+
+### 2.8 Sharing contact information, deliberately
+
+Focus never reveals a signup email, real name beyond what a person chose to display, or any way to reach someone outside the app automatically. The only path is Share Contact, reached from inside an active connection: a person picks exactly one method (phone, email, WhatsApp, Signal, Instagram, or other), types the value, and sees a plain warning before it sends: "This will be shared with [name]. If you later end or block this connection, Focus cannot remove information they've already saved outside the app." Sharing is never mutual by default: one person sharing their phone number does not reveal the other's, who makes their own separate choice, if any. This mirrors RAINN's guidance to withhold personal contact details until real trust has been established, and Hinge's own warning that people trying to move a conversation off-platform quickly are a known scam pattern, which cuts the other way if Focus itself did the revealing automatically.
+
+The distinction that matters is between the public profile and a private, already-active connection: an Instagram handle is never permitted on a public profile, in a prompt, or anywhere a stranger in discovery could see it, because that is exactly the follower-farming and validation-seeking behavior "nothing to collect" (section 1) exists to design out. Inside a connection two people already chose to have, sharing an Instagram handle, or anything else, is their own decision to make, deliberately, one field at a time.
+
+Focus does not attempt to detect or block a phone number, handle, or messaging app name typed casually into an ordinary chat message between two connected adults; that would be paternalism dressed as safety, and these are consenting adults who are free to move their conversation wherever they like. Where such a pattern is detected in a message, the only effect is a one-time, dismissible line shown to the sender before it goes: "Keep your personal information private until you're comfortable sharing it. Once it's out there, Focus can't control how it's used." followed by Send anyway, never a block. The same detection continues to apply, unchanged, to public-facing profile prompts, where the concern is different: a stranger farming followers from a dating profile, not two people who have already chosen each other.
+
+Sharing a contact method, and reaching some of the other milestones in an active connection (a real conversation, a date plan created, marking "we met," wanting to meet again), together form an internal sense of how a connection is progressing. This is never shown to users as a level, a badge, or a score, matching section 1's "explain, don't score" principle; it exists only so Focus, in aggregate and never per-person in a way anyone can see, can tell whether the product is actually helping people move toward meeting rather than just accumulating messages.
+
+### 2.9 Connection lifecycle, consolidated
+
+Nothing new: every state and transition below is already specified in 2.2, 2.4, and 2.5. This is that content redrawn as one diagram, frozen here for reference before Phase 2/3 write the migrations that implement it.
+
+```
+AVAILABLE (candidate in discovery or the waiting list, section 2.2)
+   |
+   | mutual Interested (sender and recipient both available at that instant)
+   v
+CONNECTED  --------------------------------------------------------------
+   |                                                                     |
+   |-- ordinary use: conversation, share contact (2.8), plan a date      |
+   |   (2.6), mark "we met" and check in (2.6)                          |
+   |                                                                     |
+   |-- End Connection (2.4): either side, any time, note optional  ---> both slots free, never shown to each other again
+   |                                                                     |
+   |-- Unresponsive / faded (2.5, section 7.25 inactivity job)     ---> nudge, then explicit prompt, then automatic close; slot frees
+   |                                                                     |
+   |-- Block (2.4): no note, mutual invisibility                   ---> slot frees immediately
+   |                                                                     |
+   |-- Report (2.4): can accompany Block or stand alone; severity  ---> high/critical triggers automatic Restriction (below)
+   |   tiered, past connections reportable too for safety concerns      |
+   |                                                                     |
+   |-- Partner pauses (2.5): connection stays intact, this side    ---> one-tap End available immediately, not gated by 2.4's normal timeline
+   |   sees "This person has paused their account"                      |
+   |                                                                     |
+   |-- Partner deletes their account (2.5)                          ---> connection ends immediately, neutral message, slot frees
+   |                                                                     |
+   -- Partner is Restricted (2.5, following a high/critical report) ---> connection stays visible, messaging paused pending admin review
+```
+
+**Restricted** (2.5) always resolves to either **active** or **banned** — an admin decision, never left standing. **Banned** ends every active connection the same way account deletion does: immediate, neutral, slot-freeing.
+
+### 2.10 Discovery lifecycle, consolidated
+
+Also nothing new: this is 2.2's daily loop and 2.7's pool-exhaustion handling, redrawn as one flow.
+
+```
+Mutual must-haves (section 7.2, checked both directions)
+   v
+Currently available people only (section 2.2's available(p), re-checked at read time)
+   v
+Excluding: anyone ever connected with (permanent, 2.4), "Don't show again" (2.2),
+           anyone shown and passed too recently to reconsider (2.7's 90-day/changed-profile rule)
+   v
+Reciprocal ranking (section 7.3) -- orders, never filters
+   v
+Up to 5 a day, one at a time, one deliberately from outside the top-ranked set (2.2)
+   v
+Interested / Not for me  -- human decision, no auto-match (constitution rule 7)
+   v
+Pool reaches zero  ->  "You're caught up" (2.7), never a silently widened funnel:
+   - Wait (do nothing)
+   - Explore farther (distance only, explicit action)
+   - Review my own soft preferences (must-haves untouched unless the person changes them themselves)
+   - Occasionally: reconsider profiles that materially changed 90+ days ago, offered explicitly, never folded into the ordinary five
+```
+
+---
+
+## 3. Threat model
+
+### 3.1 Assets, most sensitive first
+
+1. **Sensitive attributes**: seeking (reveals orientation), faith and practice level, heritage fields, genotype, politics, coarse location.
+2. **Private interactions**: likes (who liked whom), messages, closing notes, reports, blocks.
+3. **Photos** including verification selfies, and the raw originals during the brief upload-processing window.
+4. **Identity**: email, date of birth, Google account link.
+5. **Integrity of the mechanic**: capacity limit, browse cap, mutual pre-screen, the available/focused candidate filter, the clear-on-focus rule. If these can be bypassed the product is a worse Tinder.
+6. **Admin capability**: approve, ban, read reports.
+7. **Availability** of the service and of the data (backups).
+8. **The boundary between client-reachable and internal functions.** A function this document calls internal must actually be unreachable, not merely undocumented for clients.
+
+### 3.2 Actors
+
+| Actor | Motive | Capability |
+|---|---|---|
+| Anonymous attacker | Scrape profiles, enumerate users, abuse auth endpoints | Network access, scripts, disposable emails |
+| Malicious registered user | See who liked them, exceed capacity, view profiles they were not served, call functions the UI never exposes, harass, scam, stalk | Valid JWT, ability to call any RPC or REST endpoint directly, bypassing the UI |
+| Harasser or stalker | Locate or persist contact with a specific person | Registered user, possibly multiple accounts |
+| Romance scammer | Build trust, move off-platform, extract money | Fake photos, scripted conversation, many accounts |
+| Scraper or competitor | Bulk-export profiles and photos | Registered accounts plus automation |
+| Curious or compromised admin | Read private data beyond need, or an admin session left signed in without stepping up | Admin role, possibly without aal2 |
+| Compromised dependency or build | Exfiltrate secrets or data from the server | Runs in the Vercel build or server runtime |
+| Platform incident | Supabase or Vercel outage, key leak, backup loss | Outside our control, mitigated by configuration |
+
+### 3.3 Attack surfaces
+
+- Supabase REST (PostgREST) and RPC endpoints, reachable directly with a user JWT, regardless of what the UI shows, and regardless of what this document calls a function whether or not the database actually enforces that.
+- Supabase Realtime channels.
+- Supabase Storage endpoints for the `incoming`, `photos`, and `verification` buckets, including the signed-upload-URL issuance path and its longer, vendor-fixed expiry.
+- Supabase Auth endpoints (email OTP, Google OAuth callback, MFA enrollment and challenge).
+- Next.js server actions and route handlers (upload ticket issuance, upload processing, cron, admin).
+- The browser: XSS through user-authored text (prompts, notes, messages, heritage values), clickjacking, leaked secrets in the bundle.
+- The admin surface, including the aal2 step-up flow itself.
+- The build and dependency chain.
+- Staging: an ephemeral Supabase branch reachable from a Vercel preview URL, which is a lower-stakes but still real surface (synthetic data only, but the same code paths).
+
+### 3.4 Top risks, ranked
+
+1. **A function documented as internal is actually reachable via the Data API.** This happened once already in this document's own drafting (section 0.2, finding 1). Mitigation: internal functions live in a `private` schema that is never added to the project's exposed-schema configuration, so PostgREST cannot route to it regardless of grants; grants are a secondary hygiene measure, not the control being relied on. A test in section 11 calls every function this document designates internal through the REST endpoint directly and asserts it is unreachable.
+2. **Capacity, browse-cap, or available/focused bypass through an asymmetric check or a race.** Mitigation: every availability check is applied to both parties, at every step, not just the recipient; row locks in `_form_connection` are the final authority; concurrency tests assert zero stray pending likes after a race.
+3. **A stale, already-generated feed still shows a now-focused person.** Mitigation: availability is re-checked at read time, not only at generation time, with backfill up to the daily ceiling.
+4. **Profile viewing outside the served set (IDOR).** Mitigation: `can_view_profile()` is the single gate for profile rows and photo objects; it only returns true for self, admin, active connection partner, today's feed with the target still available, or a surfaced waiting-list like from a currently-available sender.
+5. **Sensitive attribute exposure through direct table access.** Mitigation: seeking, faith, politics, heritage, and genotype all live in owner-only tables; matching reads them inside functions in the `private` schema and returns only what the viewer is allowed to see; no bulk endpoints; no sensitive column is ever reachable through a raw `SELECT` on a table another user can query.
+6. **An upload-processing endpoint that trusts a client-supplied storage path.** Mitigation: the client passes only a ticket id; the server resolves everything else from the ticket row, which is scoped to the calling user.
+7. **Location precision.** Mitigation: coordinates rounded to about 1 km before storage; only a distance bucket is ever returned; city label is user-chosen.
+8. **Harassment persisting across blocks or accounts.** Mitigation: blocks are permanent and bidirectional, end connections, purge feed items and likes; reports carry context; human review; ban is a status, not a deletion, so a banned email cannot re-enter.
+9. **Account takeover.** Mitigation: no passwords; email OTP codes are short-lived and rate-limited; Google OAuth with PKCE; HttpOnly cookies; admin accounts additionally require aal2 (Supabase TOTP MFA), enforced in the database, not just assumed from the identity provider.
+10. **A CSP that silently breaks the CAPTCHA it depends on.** Mitigation: `script-src` and `frame-src` explicitly allow `challenges.cloudflare.com` by origin, not merely by nonce, and the nonce is also propagated onto Turnstile's own script tag as Cloudflare's documentation specifies.
+11. **Scraping.** Mitigation: 5 profiles a day per account, human verification before visibility, CAPTCHA on sign-up, no list endpoints, photos only through authenticated storage reads gated by `can_view_profile()`.
+12. **XSS.** Mitigation: React escaping, no `dangerouslySetInnerHTML`, strict CSP with per-request nonces via `proxy.ts`, user text stored as plain text and length-limited.
+13. **Secret leakage.** Mitigation: the secret key exists only in the server runtime env; the client bundle contains only the publishable key and project URL; CI checks the built bundle for both the `sb_secret_` prefix and the legacy string `service_role`.
+14. **Insider misuse.** Mitigation: admin actions only through audited functions that additionally require aal2; verification selfies deleted after decision; admins see reports and profiles, never messages except those attached to a report.
+15. **Data loss.** Mitigation: Supabase daily backups on the paid project; migrations in git; restore procedure documented in section 10.
+16. **A raw image upload exceeding a serverless function's body limit, or a decompression-bomb image.** Mitigation: uploads go direct-to-storage via a signed URL, never through a Vercel function body; the processing step enforces a sane maximum decoded pixel count before Sharp expands the image in memory.
+17. **A consent record that cannot represent re-acceptance of a new policy version.** Mitigation: consent is an append-only event log, not a single row per kind.
+
+### 3.5 Security principles that every later decision must honour
+
+- **Deny by default.** No table, bucket, or function is reachable until a policy, grant, or schema-exposure decision says so.
+- **Unreachable means unreachable, not undocumented.** A function this document calls internal is placed where the Data API cannot route to it. A naming convention is not a control.
+- **The database is the referee.** Capacity, caps, compatibility, availability, and visibility are decided in Postgres. The UI is a rendering of what the database allows.
+- **Checks are symmetric.** Any rule that depends on two people's state is checked for both of them, at every step that matters, not just at the step where it was first noticed.
+- **No counts, no lists, no scores, no preserved backlog.** No endpoint returns "how many liked you," "everyone who liked you," any accountability or reputation number, or old likes held over from a focused period.
+- **Least data.** Store the coarse version when the precise one is not needed. Delete when the purpose ends, including raw upload bytes within minutes and closing notes on the same 30-day clock as every other message.
+- **Symmetry between users.** Anything one user can see about another, the other could see about them under the same conditions.
+- **Auditable, stepped-up admin.** Every admin action writes an audit row before it takes effect, and every admin action requires a session that has completed a second factor.
+
+---
+
+## 4. System architecture
+
+### 4.1 Components
+
+```
+Browser (PWA, Next.js client)
+   |  HTTPS, user JWT in HttpOnly cookie
+   v
+Next.js 16 app on Vercel (App Router, server components, server actions, route handlers, proxy.ts)
+   |            |                              |
+   |            |                              +--> Route handlers: /api/upload/ticket (issues a Supabase signed
+   |            |                                    upload URL plus an app-level ticket), /api/upload/process
+   |            |                                    (ticket id only, server-side image pipeline), /api/cron/*
+   |            +--> Server-side Supabase client (user JWT via @supabase/ssr) for reads/writes under RLS,
+   |                 calling only functions in the `public` schema
+   +--> Client-side Supabase client (publishable key + user session) for Realtime subscriptions,
+        direct-to-storage signed uploads, and storage reads
+                v
+Supabase project (hosted, single region)
+   - Exposed schemas: `public` and the default `graphql_public` only. `private` is never added to this list.
+   - Auth: email OTP, Google OAuth (PKCE), TOTP MFA for admins, Turnstile CAPTCHA on sign-up and sign-in
+   - Postgres 17: `public` (client-facing tables and RPCs), `private` (matching logic, gates, admin checks,
+     unreachable via the Data API), RLS, pg_cron jobs
+   - Realtime: postgres_changes on messages, RLS-filtered
+   - Storage: private buckets `incoming`, `photos`, `verification`, policies gated by `private` functions
+External
+   - Google OAuth
+   - Transactional email provider for OTP codes (Supabase default SMTP for development, custom SMTP for launch)
+   - Cloudflare Turnstile
+```
+
+### 4.2 Trust boundaries
+
+1. **Browser to Next.js server.** Untrusted input. Everything validated with zod schemas on the server before touching Supabase.
+2. **Browser to Supabase Storage directly (signed upload URLs).** Untrusted bytes, but bounded: the underlying Supabase URL is valid for 2 hours (a Supabase-fixed value with no shorter option), the `incoming` bucket enforces a size ceiling and allowed MIME types at the bucket configuration level, and the application-level `upload_tickets` row independently expires in 5 minutes regardless of the URL's own longer window.
+3. **Next.js server to Supabase with the user JWT.** Trusted identity, untrusted intent. RLS and the `public`-schema functions apply exactly as if the browser called Supabase directly. The server never calls anything in `private` directly; only RLS policies and `public` functions do, inside the database.
+4. **Next.js server to Supabase with the secret key.** Fully trusted. Used only in: the upload-processing route (to read from `incoming` and write to `photos` or `verification`), the cron purge route, and nowhere else. Every use is listed in this document and grepped for in CI.
+5. **Supabase internal.** pg_cron jobs run with database owner rights and are the only code that touches rows across users without a JWT.
+
+### 4.3 Request flows
+
+**Daily feed.** Client calls server action `getFeed()`. Server calls the `public` RPC `get_daily_feed()` with the user JWT. The function checks status and capacity, and either returns today's already-generated `feed_items` after re-checking `private.available()` for every still-undecided item (backfilling stale ones up to 5 where a fresh candidate exists) or generates a new set of 5 from candidates who are compatible and currently available. Client fetches photo bytes from Storage with its own JWT; the Storage policy calls `private.can_view_profile()`, which is true because a feed item exists for today and the target is still available.
+
+**Like.** Client calls `decideFeedItem(itemId, 'like')`. Server calls the `public` RPC `decide_feed_item()`. The function verifies ownership and freshness of the item, re-checks `private.available()` for both the caller and the target, records the decision, and calls `private._send_like()`, which itself re-checks both sides again immediately before writing. Client receives `liked`, `connected`, or `not_available` (a single error code covering either side having become focused, so the client never learns which side changed). No other information is returned.
+
+**Waiting list.** Client calls `nextWaiting()`. Server calls the `public` RPC `next_waiting_like()`. The function returns one like at a time, restricted to senders who are currently available, and stamps `surfaced_at`, which is what makes that person's profile and photos viewable to the recipient.
+
+**Chat.** Client subscribes to Realtime `postgres_changes` on `messages` filtered by `connection_id`. Realtime enforces RLS with the user's JWT, so a user can only receive rows for connections they belong to. Sending is a server action that inserts under RLS; a trigger enforces membership, connection status, length, rate limits, and stamps `last_human_message_at` and `last_human_sender_id` on the connection (system messages, including the closing note, do not touch these fields).
+
+**Photo or selfie upload.**
+1. Client calls server action `createUploadTicket(kind, position?, verificationId?)`. Server inserts an `upload_tickets` row (5-minute application expiry) and requests a Supabase Storage signed upload URL for `incoming/{userId}/{ticketId}` (a Supabase-fixed 2-hour window, unrelated to and longer than the ticket's own expiry). Returns the URL and the ticket id.
+2. Client uploads the raw file bytes directly to Supabase Storage using that URL. This never touches a Vercel function body, so Vercel's 4.5 MB function payload limit does not apply; the `incoming` bucket itself enforces a 15 MB ceiling and an image-only MIME allowlist as a first filter.
+3. Client calls server action `processUpload(ticketId)`, passing nothing else. The route first calls the `public` RPC `begin_upload(ticketId)` under the user's own JWT, which claims the ticket and returns its `kind`, `object_path`, `position`, and `verification_id`, the only way the route learns any of this, never from a client-supplied path (section 7.30). The route then, using the secret key: downloads the object at that path; sniffs real file type from bytes (rejects non-images regardless of extension or declared MIME); decodes with `sharp` behind a maximum-decoded-pixel-count guard; strips all metadata including GPS; resizes to a maximum of 1600 px (1200 px for selfies) on the long edge; re-encodes as WebP; writes to a server-generated canonical path (`photos/{userId}/{newPhotoId}.webp` or `verification/{userId}/{ticket.verification_id}.webp`); deletes the `incoming` object. Finally the route calls the `public` RPC `process_upload(ticketId, width, height)` under the user's own JWT again, which inserts or updates the `photos` or `verifications` row and marks the ticket `used_at = now()` (section 7.17). If any step before that last call fails, the ticket is simply left claimed-but-unused and expires; nothing is left half-written.
+4. A cron job purges anything left in `incoming` older than one hour, as a safety net for a client that uploads but never completes step 3, and a separate daily job removes used or long-expired ticket rows.
+
+The original bytes are held only in the private `incoming` bucket for the seconds between upload and processing, then deleted.
+
+**Admin.** `/admin` route group. Every request re-checks `private.is_admin_mfa()` (exposed to the client only through a thin `public` RPC `am_i_admin()` used purely for UI gating; the real enforcement is in RLS and every admin function's own precondition). Every mutation is an RPC that writes to `admin_audit` inside the same transaction.
+
+---
+
+## 5. Data model
+
+All client-facing tables and RPCs live in schema `public`. Every function this document calls internal lives in schema `private`, which is never added to the project's exposed-schema configuration (Supabase's default is `public` plus `graphql_public`), so it is unreachable through PostgREST regardless of grants. `uuid` primary keys default to `gen_random_uuid()`. Timestamps are `timestamptz`. Every table has RLS enabled. Column lengths are enforced with CHECK constraints, not just in the app.
+
+### 5.1 Enumerated types
+
+```
+profile_status:   onboarding | pending_review | active | paused | restricted | banned | deleted
+gender:           woman | man | nonbinary | self_described
+seeking:          women | men | everyone
+goal:             marriage | life_partner | serious_relationship
+kids:             want | dont_want | open | have_want_more | have_done
+practice:         devout | practicing | cultural | not_practicing
+politics:         liberal | moderate | conservative | other | prefer_not
+habit:            never | sometimes | regularly
+timeline:         ready_now | within_year | exploring
+relocate:         yes | no | maybe
+income_band:      under_40k | b40_80k | b80_150k | b150_300k | over_300k
+genotype:         AA | AS | SS | AC | SC | unknown
+education:        high_school | some_college | bachelors | masters | doctorate | trade | other
+heritage_field:   background | community | origin_country | origin_region | language | raised_in
+pref_mode:        nice_to_have | important | must
+height_pref:      doesnt_matter | taller | around | shorter | range
+feed_decision:    none | like | pass
+like_status:      pending | declined | connected | expired
+connection_status: active | ended
+end_reason:       ended_by_user | faded | blocked | account_deleted | banned
+report_reason:    disrespectful | harassment | threats_stalking | assault_or_violence | scam | fake | underage | off_platform_push | inappropriate_content | other
+report_severity:  low | medium | high | critical
+report_status:    open | reviewed | actioned | dismissed
+report_resolution: cleared | confirmed
+verification_decision: approved | rejected
+consent_kind:     terms | privacy | sensitive_data | genotype_data
+consent_action:   accepted | withdrawn
+upload_kind:      photo | selfie | video_prompt
+contact_method:   phone | email | whatsapp | signal | instagram | other
+```
+
+### 5.2 Tables
+
+**profiles** (viewable columns only; one row per user; no sensitive attributes)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | equals `auth.users.id` |
+| status | profile_status | default `onboarding` |
+| paused_at | timestamptz | nullable; set by `pause_account()`, cleared by `unpause_account()`; see section 2.5 |
+| open_to_new | boolean | default true; set by `open_to_new_on()`/`open_to_new_off()`; turning it off closes the person's remaining capacity slot on their own terms without changing `capacity` itself; see section 2.2 |
+| first_name | text | 1 to 30 chars |
+| age | smallint | maintained by trigger from `profile_private.birth_date` and nightly job |
+| gender | gender | |
+| gender_label | text | 1 to 30 chars, only when `self_described` |
+| city_label | text | 1 to 60 chars, user-chosen |
+| capacity | smallint | CHECK 1..3, default 1 |
+| occupation | text | up to 80 chars |
+| education | education | |
+| height_cm | smallint | nullable, CHECK 120..230 |
+| show_heritage | boolean | default true; when true, the card function includes the user's heritage values for viewers |
+| prompts | jsonb | exactly 3 items `{prompt_id, answer}`; answer up to 200 chars; validated by trigger |
+| created_at, updated_at, last_active_at | timestamptz | |
+| verified_at | timestamptz | set by admin function |
+
+`seeking` deliberately does not live here; see `profile_sensitive` below.
+
+**profile_sensitive** (owner and `private`-schema functions only; no policy grants any other user a `SELECT`)
+
+| Column | Type | Notes |
+|---|---|---|
+| profile_id | uuid PK FK | |
+| seeking | seeking | |
+
+A viewer never selects this table. `can_view_profile`-gated functions read it and return `seeking` only as part of a card, alongside the mutual gender/seeking check already performed server-side in `private.mutually_compatible()`.
+
+**profile_private** (owner and `private`-schema functions only)
+
+| Column | Type | Notes |
+|---|---|---|
+| profile_id | uuid PK FK | |
+| birth_date | date | CHECK age at insert >= 18 |
+| lat_coarse, lon_coarse | numeric(6,2) | rounded to 2 decimals (about 1 km) before storage; raw value never stored |
+| age_min, age_max | smallint | own preference, CHECK 18..99, min <= max |
+| max_distance_km | smallint | CHECK 5..500 |
+| review_flags | jsonb | e.g. `{"social_handle": true}` set by trigger on prompt text |
+| email_notifications | boolean | |
+
+**profile_answers** (owner and `private`-schema functions only)
+
+goal, kids, faith_label (text up to 40), faith_key (text, normalised), faith_practice, politics, smoking, drinking, timeline, relocate, income_band (nullable), health_section_enabled (boolean, default false), genotype (nullable, only when `health_section_enabled` and a `genotype_data` `accepted` consent event exists).
+
+**profile_heritage** (owner and `private`-schema functions only)
+
+| Column | Type |
+|---|---|
+| profile_id | uuid FK |
+| field | heritage_field |
+| value | text, 1 to 40 chars, as typed |
+| value_key | text, normalised: lowercase, trimmed, diacritics folded, internal whitespace collapsed |
+
+PK `(profile_id, field, value_key)`. At most 5 values per field, enforced by trigger.
+
+**preferences** (owner and `private`-schema functions only)
+
+kids_must boolean, kids_accept kids[]; faith_key_must boolean, faith_key_accept text[]; practice_must boolean, practice_accept practice[]; politics_must boolean, politics_accept politics[]; smoking_must, smoking_accept habit[]; drinking_must, drinking_accept habit[]; genotype_must boolean, genotype_accept genotype[]; height_pref_mode height_pref (`doesnt_matter` default, `taller`, `around`, `shorter`, `range`), height_pref_min_cm smallint, height_pref_max_cm smallint (both null unless mode is `range`), height_pref_must boolean default false; use_heritage boolean default false. A `must` with an empty accept array is rejected by CHECK. `around` means within 8 cm of the person's own `profiles.height_cm` either way (section 0.9); `taller`/`shorter` compare directly against the candidate's own `height_cm`, so neither needs a stored range.
+
+**heritage_preferences** (owner and `private`-schema functions only)
+
+`(profile_id, field)` PK, mode pref_mode, accept_keys text[] (normalised, up to 10). Empty accept_keys is rejected. Rows are ignored entirely by matching while `preferences.use_heritage` is false.
+
+**photos**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| profile_id | uuid FK | |
+| position | smallint | CHECK 1..6, unique per profile |
+| storage_path | text | `photos/{profile_id}/{id}.webp`, CHECK matches pattern, always server-generated |
+| width, height | smallint | |
+| created_at | timestamptz | |
+
+Trigger: max 6 rows per profile; position 1 required before status can become `pending_review`.
+
+**verifications**
+
+id, profile_id, pose_code (text), selfie_path (text, nullable after decision), submitted_at, decided_at, decision (nullable), reviewer_id (FK admins), note (up to 300). Max 3 submissions per day per profile (trigger).
+
+**video_prompts** (section 0.14; optional, at most one per profile)
+
+| Column | Type | Notes |
+|---|---|---|
+| profile_id | uuid PK FK | one row per profile; re-recording upserts this row |
+| video_path | text | `video-prompts/{profile_id}/{id}.webm` or `.mp4` (whichever container was actually sniffed from the upload, section 0.14/7.17a — never assumed), CHECK matches pattern, server-generated |
+| poster_path | text | `video-prompts/{profile_id}/{id}.webp`, CHECK matches pattern, server-generated |
+| poster_width, poster_height | smallint | |
+| duration_ms | integer | client-reported, display-only; not a security control (section 0.14) |
+| prompt_text | text | 1 to 200 chars, the chosen prompt question, mirroring `profiles.prompts`' own stored question text |
+| created_at | timestamptz | |
+
+RLS: `video_prompts_select_viewable` under `private.can_view_profile`, same as `photos`; `video_prompts_delete_own` for the row's own `profile_id`, same as `photos_delete_own`. No direct INSERT/UPDATE policy: written only by `process_video_prompt_upload()` (section 7.17a).
+
+**upload_tickets** (no direct user access at all; function-only, same pattern as `likes`)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK | |
+| kind | upload_kind | |
+| object_path | text | `incoming/{user_id}/{id}` for `photo`/`selfie`, `video-incoming/{user_id}/{id}` for `video_prompt`; server-generated |
+| poster_object_path | text | nullable; only for `kind = 'video_prompt'`; `incoming/{user_id}/{id}-poster`, server-generated |
+| position | smallint | nullable, 1..6, only for `kind = 'photo'` |
+| verification_id | uuid FK | nullable, only for `kind = 'selfie'`, must belong to `user_id` and be undecided |
+| created_at, expires_at | timestamptz | `expires_at = created_at + 5 minutes`, independent of the underlying Supabase URL's own 2-hour validity |
+| claimed_at | timestamptz | nullable; set by `begin_upload()` (section 7.30) the moment the processing route starts, before any Storage or Sharp work; distinct from `used_at` so "claimed, in progress" and "fully processed" are never conflated |
+| used_at | timestamptz | nullable; set by `process_upload()`/`process_video_prompt_upload()` only after the processed asset is written and the `photos`/`verifications`/`video_prompts` row exists |
+
+Index `(user_id, used_at)`; purged daily once used or more than 24 hours past `expires_at`.
+
+**feed_items**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK | viewer |
+| target_id | uuid FK | |
+| served_on | date | |
+| position | smallint | 1..5 |
+| decision | feed_decision | default `none` |
+| decided_at | timestamptz | |
+
+Unique `(user_id, target_id, served_on)`. Index `(user_id, served_on)`. Rows older than 30 days are purged.
+
+**likes**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| from_user, to_user | uuid FK | CHECK from <> to |
+| status | like_status | default `pending` |
+| created_at | timestamptz | |
+| expires_at | timestamptz | created_at + 30 days |
+| note | text, <= 200 chars, nullable | tied to a specific prompt/photo (section 0.12); never selectable by `to_user` while `status = 'pending'` — surfaced only once `status = 'connected'`, as the new connection's opening context, never through a raw table read |
+| surfaced_at | timestamptz | set when shown to `to_user` by `next_waiting_like()` |
+| responded_at | timestamptz | |
+
+Unique `(from_user, to_user)`. Index `(to_user, status, created_at)`. A like can only ever be created when both parties are available (section 7.6). When either party's last open slot fills, every other `pending` like involving them, in either direction, is set to `expired` in the same transaction that forms the connection (section 7.7); this reuses the existing `expired` status rather than adding a new one, since no user-facing distinction is ever drawn between a like that aged out and one that was cleared by its recipient or sender entering Focused.
+
+**connections**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_a, user_b | uuid FK | CHECK user_a < user_b (canonical order) |
+| status | connection_status | |
+| created_at | timestamptz | |
+| ended_at | timestamptz | |
+| ended_by | uuid | nullable |
+| end_reason | end_reason | nullable |
+| last_message_at | timestamptz | updated by every message, human or system |
+| last_human_message_at | timestamptz | updated only by human-authored messages; system messages never touch this |
+| last_human_sender_id | uuid | who sent the last human message; used only to attribute a fade internally, never shown to users |
+| nudge_sent_at | timestamptz | |
+
+There is no `end_note` column. The closing note exists only as a system message in `messages`, which is the single source of truth and follows the same 30-day post-end retention as every other message in that connection, closing the contradiction in an earlier draft where the note was kept forever on the row while also being described as purged after 30 days in the chat.
+
+Partial unique index on `(user_a, user_b) WHERE status = 'active'`. Index on `(user_a, status)` and `(user_b, status)`.
+
+**messages**
+
+id bigint identity PK, connection_id FK, sender_id FK (nullable for system messages), is_system boolean default false, body text (1 to 2000 chars), created_at, deleted_at (nullable, for account-deletion anonymisation). Index `(connection_id, id)`. Trigger enforces: sender is a member for non-system messages, connection is active, sender's `profiles.status = 'active'` (a `restricted` sender is rejected with `account_restricted`, section 2.5 and 7.13; a `paused` sender is not restricted from messaging, only from new matching, so this check only ever blocks `restricted`), rate limits, and updates `connections.last_message_at` always, `last_human_message_at`/`last_human_sender_id` only when `is_system = false`.
+
+**blocks**
+
+`(blocker_id, blocked_id)` PK, created_at. Never deleted by users.
+
+**reports**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| reporter_id, reported_id | uuid FK | |
+| connection_id | uuid FK | nullable |
+| message_id | bigint FK | nullable |
+| reason | report_reason | |
+| severity | report_severity | default computed from `reason` by trigger (disrespectful→low, harassment→medium, threats_stalking→high, assault_or_violence→critical, scam→medium, fake→low, underage→critical, off_platform_push→low, inappropriate_content→low, other→low); admin-overridable |
+| details | text | up to 1000 |
+| created_at | timestamptz | |
+| status | report_status | |
+| resolution | report_resolution | nullable, set only when an admin resolves a report that triggered a restriction |
+| reviewed_by, reviewed_at, action | | |
+
+Index on `(status, severity, created_at)` so `high` and `critical` reports sort to the top of the review queue by construction. For `reason` in `threats_stalking` or `assault_or_violence`, `report_user()` (section 7.13) does not require the same 30-day visibility window as an ordinary report; it only requires that a connection, feed item, or like ever existed between the two, at any point in the past, matching how Hinge allows reporting a past match about something that happened offline. If the connection's messages were already purged under the normal 30-day schedule before the report was filed, they cannot be recovered; this is stated plainly rather than implied otherwise.
+
+**meeting_checkins**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| profile_id | uuid FK | the person answering; never visible to the other party |
+| connection_id | uuid FK | |
+| met_at | timestamptz | when this person tapped "We met" |
+| see_again | text | `yes` \| `not_sure` \| `no`, nullable until answered |
+| felt_unsafe | boolean | default false |
+| created_at | timestamptz | |
+
+Unique `(profile_id, connection_id)`: one check-in per person per connection, updatable. RLS: own rows only, no policy grants the connection partner access to the other's row, ever; this is deliberately more private than the connection's own message thread. A `felt_unsafe = true` value increments `user_abuse_signals.unsafe_checkin_flags_received` for the other party in the same connection, admin-only, in addition to whatever the person does next (Block, Report, or nothing).
+
+**permanent_excludes**
+
+`(viewer_id, target_id)` PK, created_at. One-directional and permanent: only removes `target_id` from `viewer_id`'s own candidate pool, unlike `blocks`, which is mutual and ends any active connection. Written only by `dont_show_again()` (section 7.23); no user ever sees this list, only the absence of that person from their own discovery.
+
+**feed_feedback**
+
+`(user_id, day)` PK, reasons text[] (values drawn from a small fixed set: `no_attraction`, `lifestyle`, `too_different`, `too_similar`, `distance`, `values`, `nothing_specific`), created_at. Entirely optional, written only by `submit_feed_feedback()` (section 7.24), used only for qualitative product review; never read by any ranking function, since v1's ranking is deliberately deterministic and inspectable, not adaptive (section 1).
+
+**date_plans**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| connection_id | uuid FK | |
+| created_by | uuid FK | |
+| location_text | text | up to 200 chars |
+| planned_at, expected_end_at | timestamptz | |
+| created_at | timestamptz | |
+
+No third-party contact information is ever stored here: sharing happens through the user's own device share sheet, exactly as Bumble's Share Date works, so Focus never holds a friend's phone number or email. Purged automatically 3 days after `expected_end_at` (section 7.19), since the row has no purpose once the window it describes has passed.
+
+**contact_share_events**
+
+`(id, connection_id, shared_by, method contact_method, created_at)`. Deliberately holds no value column: the actual phone number, email, or handle is sent as an ordinary chat message (section 7.26) and lives and dies under the same message retention as everything else in that connection (section 8.4), never duplicated here. This table exists only to give an internal, never-shown sense of how a connection is progressing (section 2.8); it records that a share of a given type happened and by whom, nothing more. Written by `share_contact()` (section 7.27).
+
+**user_abuse_signals** (admin-only; never user-selectable, not even the owner's own row)
+
+profile_id PK, connections_ended int, connections_ended_with_note int, connections_faded_as_non_responder int, reports_received int, unsafe_checkin_flags_received int, updated_at. Written only by functions and the inactivity job. Used exclusively to surface repeat-ghosting or abuse patterns to admins; never rendered to any user, and never contributes to matching or ordering.
+
+**user_daily**
+
+`(user_id, day)` PK, feed_served smallint, waiting_responses smallint, messages_sent int, reports_filed smallint, photo_uploads smallint, verification_submissions smallint. Written only by functions and triggers.
+
+**consent_events** (append-only; replaces the single-row `consents` table from the first draft, which could not represent re-accepting a new policy version because its primary key would collide)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | bigint identity PK | |
+| profile_id | uuid FK | |
+| kind | consent_kind | |
+| version | text | |
+| action | consent_action | `accepted` or `withdrawn` |
+| occurred_at | timestamptz | |
+
+No `UPDATE` or `DELETE` policy for anyone, ever, matching `admin_audit`'s pattern. Current state for a given kind is derived as the most recent event; a profile cannot leave `onboarding` until the most recent event for `terms`, `privacy`, and `sensitive_data` is `accepted` at the current required version. `genotype_data` is separate and only required if `health_section_enabled` is set true; it is never implied by the other three and never implied by any heritage answer.
+
+**admins**
+
+user_id PK, added_at, added_by. Seeded by migration with your user id after first sign-in. Only editable through SQL migration, never through the app.
+
+**admin_audit**
+
+id bigint identity, admin_id, action text, target_type text, target_id uuid, details jsonb, created_at. Insert-only; no update or delete policy for anyone.
+
+**deletion_requests**
+
+profile_id PK, requested_at, purge_after (requested_at + 7 days), purged_at.
+
+### 5.3 What is deliberately not stored
+
+- Raw coordinates, IP addresses, device identifiers, or browser fingerprints.
+- Original uploaded image bytes beyond the seconds they sit in `incoming` before processing, or any EXIF.
+- Passwords (none exist), phone numbers.
+- Like counts, view counts, or any per-profile popularity or reputation number, visible or not-quite-visible.
+- Social handles. Detected ones are flagged, not stored separately.
+- Free-text bios. Prompts are shorter and easier to moderate.
+- A closing note anywhere but the message stream it belongs to.
+- Any pending like that survived a user's transition into Focused.
+
+---
+
+## 6. Authorization model
+
+### 6.1 Roles and schemas
+
+- `anon`: can call nothing except Auth endpoints. No table or function grants.
+- `authenticated`: every signed-in user. All access goes through RLS policies and the `public`-schema functions listed in section 6.5. There is nothing to grant in `private`, because `private` is not on the project's exposed-schema list and is therefore unreachable via the Data API regardless of any grant.
+- Admin: an `authenticated` user whose id is in `admins`, checked by `private.is_admin(uid)` for identity, and `private.is_admin_mfa(uid)` (adds the aal2 check) for every actual access to admin data or functions. A thin `public.am_i_admin()` RPC exposes the aal2-inclusive check to the client purely so the Next.js server can decide whether to render the admin shell; it is a UX convenience, not a security boundary, since the real enforcement is in RLS and every admin function's own precondition. A second thin RPC, `public.am_i_admin_identity()`, exposes `is_admin(auth.uid())` alone (no aal2 check), found necessary while building the admin UI: without it, the client cannot tell "not an admin at all" apart from "an admin who hasn't completed TOTP yet in this session," and those two cases need different screens (nothing, versus an enrollment prompt). Revealing only whether the caller themselves is an admin is not a meaningful disclosure; it never reveals anyone else's admin status, and every actual admin capability still requires `is_admin_mfa`, which this function does not touch.
+- `service_role` / secret key: used only by the upload-processing route and the cron purge route. Never in the browser.
+
+### 6.2 The single visibility gate
+
+```sql
+private.can_view_profile(viewer uuid, target uuid) returns boolean
+```
+
+True when any of the following holds, and the pair is not blocked in either direction:
+
+1. `viewer = target`.
+2. `private.is_admin_mfa(viewer)`.
+3. An `active` connection exists between them, **regardless of the target's own profile status**. A paused or restricted person's existing connection partner must still be able to see their profile and photos, exactly as before, so the partner can render the plain-language notice from section 2.5 and act on it; only new matching exposure (cases 4 and 5) is gated on the target being `active`. This was a real gap in the prior draft, which required `active` status uniformly and would have broken an existing chat the moment its other member paused.
+4. A `feed_items` row exists with `user_id = viewer`, `target_id = target`, `served_on = current_date`, the target's profile status is `active`, **and `private.available(target)` is true right now**. This closes the gap where an already-generated feed row kept a now-focused person visible; the check happens every time the function runs, not only at the moment the row was inserted.
+5. A `likes` row exists with `from_user = target`, `to_user = viewer`, `status = 'pending'`, `surfaced_at IS NOT NULL`, not expired, the target's profile status is `active`, and `private.available(target)` is true at read time.
+
+Ended connections do not grant visibility after 30 days (messages are purged by then; profile viewing ends immediately at `ended_at`). The function is `STABLE`, `SECURITY DEFINER`, `SET search_path = ''` with every referenced object fully qualified (`public.profiles`, `public.connections`, `auth.uid()`), and is the only predicate used by the `profiles`, `photos`, and Storage `photos` bucket read policies.
+
+### 6.3 Policies by table
+
+All tables are in `public`. Nothing below grants access to a `private`-schema object, because there is no client-facing operation that would ever need to.
+
+| Table | SELECT | INSERT | UPDATE | DELETE |
+|---|---|---|---|---|
+| profiles | `private.can_view_profile(auth.uid(), id)` | own row, id = auth.uid(), status must be `onboarding` | own row; `status`, `verified_at`, `age` cannot be changed by the user (trigger rejects) | none (deletion via function) |
+| profile_sensitive | own row | own row | own row | none |
+| profile_private | own row | own row | own row | none |
+| profile_answers | own row | own row | own row | none |
+| profile_heritage | own rows | own rows | own rows | own rows |
+| preferences | own row | own row | own row | none |
+| heritage_preferences | own rows | own rows | own rows | own rows |
+| photos | `private.can_view_profile(auth.uid(), profile_id)` | none (function only, via the processing route inserting with the user JWT) | none | own rows |
+| verifications | own rows or `private.is_admin_mfa` | none (function only) | none (admin via function) | none |
+| upload_tickets | none for users | none for users | none for users | none |
+| feed_items | own rows (`user_id = auth.uid()`) | none (function) | none (function) | none |
+| likes | **none for users.** Not even own outgoing likes. All access via functions. Admin: none. | none | none | none |
+| connections | member (`auth.uid() IN (user_a, user_b)`) | none (function) | none (function) | none |
+| messages | member of the connection | member, connection active, `sender_id = auth.uid()` for non-system rows (trigger enforces the rest) | none | none |
+| blocks | own rows as blocker | own rows | none | none |
+| reports | own rows as reporter (without `action`, `resolution`, and reviewer fields) or `private.is_admin_mfa` | own rows (via function) | admin via function (requires aal2) | none |
+| meeting_checkins | own rows only, never the connection partner's | own rows (via function) | own rows (via function) | none |
+| permanent_excludes | none for users, by design (section 7.23) | own rows (via function) | none | none |
+| feed_feedback | own rows | own rows (via function) | none | none |
+| date_plans | member of the connection | member (via function) | none | member, own plan (via function) |
+| contact_share_events | member of the connection | none (function only, via `share_contact`) | none | none |
+| user_abuse_signals | `private.is_admin_mfa` only. Not even the profile owner. | none | none | none |
+| user_daily | own row | none | none | none |
+| consent_events | own rows | own rows (via function) | none, ever | none, ever |
+| admins | `private.is_admin_mfa` only | none | none | none |
+| admin_audit | `private.is_admin_mfa` only | none (function) | none | none |
+| deletion_requests | own row | via function | none | none |
+
+"None" means no policy exists, so the operation is denied for every role except the database owner used by functions and cron.
+
+### 6.4 Storage policies
+
+| Bucket | Read | Write | Delete |
+|---|---|---|---|
+| incoming (private) | secret key only (processing route) | owner, via a short-lived Supabase signed upload URL issued alongside an `upload_tickets` row; bucket-level 15 MB size ceiling and image-only MIME allowlist; the Supabase URL itself is valid 2 hours by vendor design, and the paired `upload_tickets` row's own 5-minute expiry is what actually bounds the application's processing window | secret key (processing route, immediately after use; cron safety net after 1 hour) |
+| photos (private) | `private.can_view_profile(auth.uid(), folder_owner)` | secret key only (processing route) | owner of folder, and secret key (account purge) |
+| verification (private) | `private.is_admin_mfa` only | secret key only (processing route) | secret key (review function triggers deletion; also the account purge route) |
+| video-incoming (private) | secret key only (processing route) | owner, via a signed upload URL, same as `incoming`; its own 25 MB size ceiling and `video/webm`/`video/mp4` allowlist, kept separate from `incoming` so this ceiling never applies to the image path (section 0.14) | secret key (processing route; cron safety net after 1 hour) |
+| video-prompts (private) | `private.can_view_profile(auth.uid(), folder_owner)` | secret key only (processing route) | owner of folder, and secret key (account purge) |
+
+Object paths for `incoming`/`video-incoming` are the ticket's own `object_path`/`poster_object_path`, generated server-side; the client never chooses or later re-supplies a path. Public URL access is disabled on all five buckets.
+
+### 6.5 Function grants and the private schema
+
+Every function a client can legitimately call lives in `public`, is created with `SECURITY DEFINER`, `SET search_path = ''` with every object fully qualified, `REVOKE ALL ON FUNCTION ... FROM PUBLIC`, and `GRANT EXECUTE TO authenticated` (admin functions additionally check `private.is_admin_mfa` in their first line). That list is exactly:
+
+```
+get_daily_feed, feed_state, decide_feed_item, next_waiting_like, respond_to_like,
+end_connection, set_capacity, block_user, report_user, request_account_deletion,
+pause_account, unpause_account, record_meeting_checkin,
+dont_show_again, submit_feed_feedback, reconsider_passed_profiles,
+open_to_new_on, open_to_new_off, share_contact,
+create_date_plan, get_date_plan, delete_date_plan,
+start_verification, submit_for_review,
+create_upload_ticket, begin_upload, process_upload, process_video_prompt_upload, record_consent, am_i_admin, am_i_admin_identity,
+admin_review_verification, admin_review_report, admin_ban_user, admin_reinstate_user
+```
+
+Every other function used by section 7, including `available`, `mutually_compatible`, `reciprocal_score`, `can_view_profile`, `is_admin`, `is_admin_mfa`, `normalize_key`, `_send_like`, `_form_connection`, and `_purge_user`, lives in schema `private`. This is the actual fix for the exposure found in the second review: an earlier draft called these "internal" in prose while defining several of them without the underscore convention the draft itself claimed to enforce, and the enforcement mechanism (a grant) was never actually withheld from them. The `private` schema is never added to the project's list of exposed schemas (the Supabase default is `public` and `graphql_public`), so these functions cannot be reached through PostgREST at all, regardless of any `GRANT` statement. The control being relied on is schema exposure, not a grant that a future migration could accidentally loosen.
+
+**A narrow class of `private` functions still needs `GRANT EXECUTE ... TO authenticated`, found while implementing Phase 1, not assumed away.** An RLS policy's `USING`/`WITH CHECK` expression, and any trigger function not itself declared `SECURITY DEFINER`, both execute as the querying role, not as some elevated identity, regardless of whether the function they call is `SECURITY DEFINER`: `SECURITY DEFINER` governs whose privileges the function body runs *with once invoked*, not whether a given role is allowed to invoke it at all, and that invocation permission is exactly what `REVOKE ALL ... FROM authenticated` removes. `profiles_select_viewable`'s policy calling `private.can_view_profile` directly, and `sync_faith_key`'s plain trigger calling `private.normalize_key` directly, both need that call itself to be permitted. The functions genuinely needing `GRANT EXECUTE ... TO authenticated` are exactly the small set invoked this way: `can_view_profile`, `is_admin_mfa`, `normalize_key`, and `has_current_consent`, none of which mutate data or return anything beyond a boolean or a normalised string. `is_admin` needs no such grant, since it is only ever called from inside `is_admin_mfa`'s own `SECURITY DEFINER` body, which already runs with the function owner's privileges by the time it gets there. This does not reopen the exposure the second review found: PostgREST's exposed-schema configuration, not the database's `GRANT` system, is what refuses a direct `POST /rest/v1/rpc/can_view_profile` call, and that refusal holds regardless of what `authenticated` can invoke in a plain SQL statement or a policy. A trigger function that needs to touch a `private`-schema *table* directly, rather than call one of these four narrow functions, is instead declared `SECURITY DEFINER` itself (for example, the Phase 1 profile-edit rate limiter), keeping that table's access mediated entirely by one specific, audited function rather than opened to `authenticated` at all.
+
+Every exposed `public` function starts with:
+
+```sql
+if auth.uid() is null then raise exception 'not_authenticated'; end if;
+```
+
+and admin functions additionally start with:
+
+```sql
+if not private.is_admin_mfa(auth.uid()) then raise exception 'forbidden'; end if;
+```
+
+then check the caller's profile status where relevant.
+
+---
+
+## 7. Core loop functions
+
+Each function lists its schema, preconditions, effects, invariants, concurrency handling, and the errors it raises. Error codes are short strings the UI maps to copy; no internal details leak. Functions marked `private` are unreachable by clients per section 6.5; functions marked `public` are the actual RPC surface.
+
+### 7.1 `private.available(p uuid) returns boolean` (STABLE)
+
+True when all of the following hold, matching the formula in section 2.2 exactly (an earlier draft defined this function as capacity math alone and never updated it after this toggle was added in section 0.5, which would have silently made it a no-op; caught and fixed here before implementation):
+
+```sql
+select
+  pr.status = 'active'
+  and pr.paused_at is null
+  and pr.open_to_new = true
+  and (
+    select count(*) from public.connections c
+    where c.status = 'active' and (c.user_a = p or c.user_b = p)
+  ) < pr.capacity
+from public.profiles pr
+where pr.id = p
+```
+
+`restricted` and `banned` both fail the `status = 'active'` check here too, which is correct: neither should ever be a fresh candidate or receive a new like, on top of the messaging block that `restricted` gets separately (section 5.2, `messages` trigger).
+
+This single function is checked, symmetrically, everywhere it matters: building candidate pools (7.4), re-reading an already-generated feed (7.4), before sending a like on both sides (7.5, 7.6), before forming a connection on both sides (7.7), and before surfacing or accepting a waiting like on both sides (7.8, 7.9). A focused, paused, restricted, or not-open-to-new profile fails this check everywhere, so no new like can reach them and they never appear as a fresh or stale candidate to anyone.
+
+### 7.2 `private.mutually_compatible(a uuid, b uuid) returns boolean` (STABLE)
+
+True when all of the following hold. This function is intentionally about compatibility rules only; availability is a separate, additional filter applied by every caller, so a temporarily-focused person's compatibility rules are still evaluated correctly the moment they free up.
+
+- Both profiles are `active`.
+- No block in either direction.
+- Gender and seeking match in both directions (`everyone` matches any gender).
+- Each person's age is within the other's `age_min..age_max`.
+- Distance between coarse coordinates is within both `max_distance_km`.
+- For each of kids, faith_key, practice, politics, smoking, drinking, genotype: if A's `must` is set, B's answer is in A's accept list; and the same with roles reversed. A `must` on genotype against a person with the health section disabled fails.
+- For each heritage field where A has `use_heritage = true` and mode `must`: at least one of B's `value_key`s for that field is in A's `accept_keys`; and reversed.
+- Height (section 0.9): if A's `height_pref_must` is set, B's `height_cm` satisfies A's `height_pref_mode` (`taller`/`shorter` compared directly against A's own `height_cm`, `around` within 8 cm of it, `range` within `height_pref_min_cm..height_pref_max_cm`); and reversed. `doesnt_matter` and a `prefer`-only preference never affect compatibility, only `reciprocal_score`.
+
+`nice_to_have` and `important` never affect compatibility, only ordering.
+
+### 7.3 `private.reciprocal_score(a uuid, b uuid) returns int` (STABLE)
+
+Replaces the one-directional `preference_score` from the first two drafts, which only scored the viewer's own preferences against a candidate and never asked whether the candidate would also want to see the viewer, a gap confirmed against the academic distinction between an ordinary recommender and a reciprocal one, where both parties' interest has to be modeled. This function is symmetric by construction: `reciprocal_score(a, b) = reciprocal_score(b, a)` always, since it is the sum of what each side would score about the other, calculated the same way regardless of which one is asking.
+
+For each of `(a, b)` and `(b, a)` in turn, sum:
+
+- Heritage: zero if that person's `use_heritage` is false; otherwise the weighted sum of their satisfied heritage rules about the other, `important` counts 3, `nice_to_have` counts 1 (unchanged from the prior draft's `preference_score`, just now applied in both directions and added together).
+- Soft lifestyle alignment: +1 if `timeline` matches exactly, +1 if `relocate` matches exactly. These are display-only fields with no hard-filter role (section 2.3); this is the only place they affect anything, and only as a small nudge to ordering, never as a filter.
+- Height (section 0.9): +1 if that person's `height_pref_mode` is not `doesnt_matter` and the other satisfies it, by the same comparison `mutually_compatible` uses. This is deliberately a flat, small nudge like the other two soft-preference bullets above, never a population-wide "taller is better" term: it only ever reflects one specific person's own stated preference against one specific other person's own height, contributing nothing when nobody involved has a height preference at all.
+
+The total is halved and rounded, so a change to only one side's preferences doesn't silently double-count. Distance and recency are applied separately as tie-breakers in `get_daily_feed`, not folded into this score, so this function stays a pure statement of "how much do these two people's own stated preferences point toward each other," inspectable and explainable, matching the goal in section 1 that a candidate is ordered by something a person could, if they asked, actually have explained to them (section 7.4's `shared_factors`), never by an opaque model. Used for ordering and for generating the explanation shown to the user; never for filtering, and never shown to a user as a number.
+
+### 7.4 `public.get_daily_feed() returns setof feed_card`
+
+`feed_card` is a composite of viewable profile columns, photo paths, a distance bucket text (`under 5 km`, `5 to 15 km`, `15 to 50 km`, `over 50 km`), the feed item id and decision, `is_focus_pick boolean`, and `shared_factors text[]`, a short list of plain, factual strings such as "You're both looking for marriage," "Both want children," or "8 miles apart," generated from whichever non-negotiables both people share or whichever heritage rule was satisfied. There is no numeric score, attention-state, or accountability field on the card; section 1's "explain, don't score" principle is enforced at the return type, not just in the UI layer, since a function that never returns a number cannot be accidentally rendered as one.
+
+- Preconditions: caller `active`; `private.available(caller)`. Otherwise returns an empty set and a reason code via `feed_state()`, which now additionally returns `caught_up` when the caller is available but zero fresh candidates exist for the day (section 2.7), distinct from `pending_review` or `at_capacity`.
+- If `feed_items` for today already exist, re-validate before returning: for every item with `decision = 'none'`, re-check `private.available(target_id)` and `private.mutually_compatible(caller, target_id)`, since a target's non-negotiables could also have changed since the morning. For any item that now fails, remove it from what is returned and attempt to backfill one replacement candidate using the same selection logic as fresh generation (step 2 below), inserting a new `feed_items` row for today, up to the original ceiling of 5. If no replacement is available, the caller simply sees fewer than 5 for that day, and `feed_state()` reports `caught_up` once none remain. This closes the gap where a feed generated in the morning could still show a person who became focused later that day.
+- Otherwise, inside one transaction:
+  1. Lock the caller's `user_daily` row for today (`INSERT ... ON CONFLICT DO UPDATE ... RETURNING` with `FOR UPDATE`) so two concurrent calls cannot both generate.
+  2. Candidates (Layer 1, hard eligibility): `active` profiles `p` where `private.available(p)` and `private.mutually_compatible(caller, p)`, excluding: self; anyone with a `likes` row from the caller in the last 30 days (any status); anyone the caller passed in `feed_items`, ever, unless surfaced again through the separate reconsideration path in section 2.7 (which writes its own `feed_items` rows outside this function, never mixed into the ordinary daily 5); anyone in `permanent_excludes` for the caller; anyone with any `connections` row with the caller; anyone in `blocks` either way.
+  3. Rank the candidate set (Layer 2, reciprocal ranking) by `private.reciprocal_score(caller, p) DESC`, distance ASC.
+  4. Take the top 4 by rank. For the fifth (Layer 3, exploration), draw one candidate at random, weighted toward but not limited to the next-highest-ranked remainder, deliberately excluding whichever heritage or lifestyle attributes dominate the top 4, so the daily set doesn't compound into an ever-narrower pattern. If fewer than 5 total candidates exist, all of them are shown and no exploration slot is manufactured.
+  5. Insert `feed_items` with positions; mark the single highest-`reciprocal_score` item across the full set (not only today's five) as `is_focus_pick`. Compute and store enough to reconstruct `shared_factors` per item. Set `feed_served`.
+- Invariants: at most 5 items per user per day; every item returned passes `mutually_compatible` and `available` at the moment it is returned; at most one item per day is marked `is_focus_pick`; no field on `feed_card` is ever a bare number presented as a score.
+- Errors: `not_active`, `at_capacity`.
+
+The waiting list has priority: the UI calls `next_waiting_like()` first and only shows discovery when it returns nothing.
+
+### 7.5 `public.decide_feed_item(item_id uuid, decision feed_decision) returns text`
+
+- Preconditions: item belongs to caller, `served_on = current_date`, `decision = 'none'`, decision argument is `like` or `pass`.
+- Preconditions and effects same as before, plus an optional `note text` argument (section 0.12), <= 200 chars, passed through to `private._send_like`.
+- Effects: set decision and `decided_at`. If `like`: re-check `private.available(caller)` **and** `private.available(target)`; if either now fails, return `not_available` without creating a like row (this is the symmetric fix: an earlier draft only re-checked the target, which meant a caller who had just become focused through a separate connection could still like someone else off a stale card). Otherwise call `private._send_like(caller, target, note)` and return its outcome. If `pass`, return `passed`.
+- Errors: `not_found`, `already_decided`, `stale_item`, `not_available`.
+
+### 7.6 `private._send_like(from_user uuid, to_user uuid, note text default null) returns text`
+
+- Preconditions: `private.mutually_compatible(from, to)`; `private.available(from_user)` **and** `private.available(to_user)`, both re-checked here as the last check before this function's own writes, independent of whatever the caller already checked.
+- If a `pending`, unexpired like exists to→from: if this call also carries a `note`, attach it to *this* new like row before it's set `connected` in `_form_connection` (both directions can carry a note — see 7.7 step 4b). Call `private._form_connection(from, to)`; return its outcome (`connected`).
+- Else insert like `(from, to, pending, note, expires_at = now() + 30 days)` and return `liked`.
+- Invariant: a user never learns whether the other person had already liked them unless a connection forms; a user never learns a note existed on a like that was declined, expired, or never reciprocated.
+
+### 7.7 `private._form_connection(x uuid, y uuid) returns text`
+
+1. Order the pair: `a = least(x, y)`, `b = greatest(x, y)`.
+2. `SELECT ... FROM public.profiles WHERE id IN (a, b) ORDER BY id FOR UPDATE` (deterministic lock order prevents deadlocks).
+3. Recount active connections for each under the lock and confirm both are still available. If not, raise `not_available`.
+4. Insert `connections (a, b, active)`, set both like rows to `connected`.
+4b. Read `note` off both like rows (the original pending one, and the reciprocal one if it also carried a note) and write whichever exist as the connection's opening system context (section 0.12), each attributed to whoever wrote it, no message row required — this is what the chat screen renders before either person has sent anything, not something either side had to separately share.
+5. **For each of `a` and `b`, if `private.available(that user)` is now false** (this connection consumed their last open slot): update every other `pending` like involving that user, in either direction, to `expired`. A user with remaining capacity (2 or 3, still available after this connection) keeps their other pending likes untouched, since they are still open to new connections in the normal sense.
+6. Return `connected`.
+- Invariant: after commit, `active_connections(u) <= capacity(u)` for every user, and no user who just entered Focused has any surviving pending like.
+
+### 7.8 `public.next_waiting_like() returns feed_card`
+
+- Preconditions: caller `active` and `private.available(caller)`.
+- Select one `likes` row where `to_user = caller`, `status = 'pending'`, not expired, no block, `private.mutually_compatible(caller, from_user)` still true, `private.available(from_user)` still true, ordered by `created_at ASC`, `LIMIT 1 FOR UPDATE SKIP LOCKED`.
+- Set `surfaced_at = now()` if null. Return the card for `from_user`.
+- Returns nothing when the list is empty. Never returns a count.
+- Rate: at most 20 `respond_to_like` calls per day; the surfacing itself is not limited because it returns the same row until answered.
+
+### 7.9 `public.respond_to_like(like_id uuid, accept boolean) returns text`
+
+- Preconditions: like `to_user = caller`, `pending`, `surfaced_at IS NOT NULL`, not expired, `private.available(caller)` re-checked at call time, not only at the time it was surfaced.
+- If not accept: `status = 'declined'`, `responded_at = now()`. The liker is never notified and never learns this. Return `passed`.
+- If accept: increment `waiting_responses`; re-check `private.available(from_user)`; if still available, call `private._form_connection(caller, from_user)` and return `connected`; if the sender has since become focused elsewhere, return `not_available` and leave the like pending (it can surface again later if the sender frees up and this like was not itself cleared by that sender's own Focused transition, per 7.7 step 5).
+- Errors: `not_found`, `not_surfaced`, `expired`, `at_capacity`, `not_available`, `daily_limit`.
+
+### 7.10 `public.end_connection(connection_id uuid, note text) returns void`
+
+- Preconditions: caller is a member; status `active`. `note` is nullable: when given, it is either free text 1 to 300 characters or one of the preset codes (`not_a_fit`, `no_chemistry_after_meeting`, `goals_dont_align`, `taking_a_break`, `something_else`) which expand to fixed copy; when omitted, no note is required and none is implied. Section 1's exit principle applies literally here: this function has no other precondition, no cooldown, and no minimum time in the connection.
+- Effects: status `ended`, `ended_at`, `ended_by = caller`, `end_reason = ended_by_user`. Increment caller's `connections_ended` in `user_abuse_signals`, and `connections_ended_with_note` only if a note was given. Insert a system message (`is_system = true`, does not update `last_human_message_at`) containing either the note or a plain "This connection has ended."; this message is the only copy of the note that ever exists, and it is purged with the rest of the connection's messages 30 days after `ended_at`. Both users become `available` again immediately if their count drops below their capacity.
+
+### 7.11 `public.set_capacity(n smallint) returns void`
+
+- Preconditions: 1..3.
+- Effects: update `capacity`. No connection is ever ended by this, and no pending like is cleared by this alone; clearing only happens on the transition into Focused via `_form_connection`, never on a capacity change by itself.
+
+### 7.12 `public.block_user(target uuid) returns void`
+
+- Insert into `blocks`. End any active connection between them with `end_reason = blocked`, no `user_abuse_signals` change for the blocker. Set every like between them to `declined`. Delete feed items between them. The blocked person sees the connection as "ended" and cannot tell it was a block.
+
+### 7.13 `public.report_user(target uuid, reason report_reason, details text, connection_id uuid, message_id uuid) returns void`
+
+- Preconditions: for ordinary reasons (`disrespectful`, `scam`, `fake`, `off_platform_push`, `inappropriate_content`, `other`), target is or was viewable to the caller (connection, feed, or surfaced like) within the last 30 days. For `harassment`, `threats_stalking`, `assault_or_violence`, and `underage`, that window does not apply: it is enough that a connection, feed item, or like ever existed between the two, at any point, matching the ability to report a past match about an offline incident. Max 10 per day.
+- Effects: insert the report; compute `severity` from `reason` per the table in section 5.2, unless a caller-supplied `override_severity` from a trusted internal path applies (there is none for ordinary users; admins adjust severity only through `admin_review_report`). Increment target's `reports_received` in `user_abuse_signals`. **If the computed severity is `high` or `critical`, immediately set the target's `profile_status` to `restricted`** (unless already `banned`, which is stricter and unaffected): this removes them from all matching immediately (the existing `mutually_compatible` and `get_daily_feed` candidate checks already require `status = 'active'`, so no separate matching-side change is needed) and blocks them from sending any new message in any connection (enforced by the trigger on `messages`, section 5.2). Existing connections are not ended by this; each partner sees the generic notice from section 2.5 and retains their own immediate End Connection and Block options regardless. If a connection is referenced and has not yet reached its 30-day post-end purge, its messages are exempted from that purge for as long as the report remains open, exactly as already applied to any report.
+
+### 7.14 `public.request_account_deletion() returns void`
+
+- Immediate effects: status `deleted`; end all active connections with `end_reason = account_deleted`; decline all likes both ways; delete feed items; anonymise `messages.sender_id` display via a `deleted_at` on the profile; insert `deletion_requests` with `purge_after = now() + 7 days`.
+- Deferred purge (section 10): delete Storage objects across all three buckets for this user, then all rows for the user across every table except `reports` where the user is `reported_id` (kept for 12 months) and `admin_audit`.
+
+### 7.15 Admin functions
+
+`admin_review_verification(id, decision, note)`, `admin_review_report(id, status, action, note, resolution)`, `admin_ban_user(profile_id, reason)`, `admin_reinstate_user(profile_id, reason)`. Each: `private.is_admin_mfa(auth.uid())` or `forbidden`; write `admin_audit` first; then act. When `admin_review_report` closes a report whose severity had set the target to `restricted`, `resolution` is required: `cleared` returns the target to `active` (restoring normal matching and messaging immediately), `confirmed` moves them to `banned` (section 7.15's existing ban effects apply: end their connections, decline their likes). A `restricted` account is never left in that state after review; it always resolves one way or the other, per section 1's exit principle applying to the platform's own obligations, not only to users.
+
+### 7.16 `public.create_upload_ticket(kind upload_kind, position smallint, verification_id uuid) returns jsonb`
+
+- Preconditions: for `kind = 'photo'`, `position` between 1 and 6; for `kind = 'selfie'`, `verification_id` must reference a row owned by the caller with `decision IS NULL`; for `kind = 'video_prompt'`, neither `position` nor `verification_id` is used (a profile has at most one). Rate-limited alongside the existing photo and verification daily caps (section 9.4).
+- Effects: insert an `upload_tickets` row with a server-generated `object_path` — under `incoming/{caller}/{ticketId}` for `photo`/`selfie`, or `video-incoming/{caller}/{ticketId}` for `video_prompt` — and, only for `video_prompt`, an additional `poster_object_path` under `incoming/{caller}/{ticketId}-poster`; `expires_at = now() + 5 minutes`. Returns `{ ticketId, objectPath }`, plus `posterObjectPath` for `video_prompt`; the calling route requests its own Supabase signed upload URL for each returned path (each itself valid 2 hours, a vendor-fixed value this function does not control and does not rely on for its own security guarantee) — this function only reserves the path and the ticket, it never calls Storage itself.
+
+### 7.17 `public.process_upload(ticket_id uuid, width smallint, height smallint) returns jsonb`
+
+Split into two functions from a single `process_upload` in earlier drafts, which described one function doing both a JWT-gated row check and secret-key Storage work in the same breath, an impossible combination for a single Postgres function to actually perform (Sharp-based image decoding runs in Node.js, not Postgres, and `upload_tickets` grants nothing directly selectable, so the calling route cannot even read `object_path` without a function to hand it over first). The two are `begin_upload` (section 7.30), called before any Storage work, and this function, called after.
+
+- Preconditions: ticket exists, `user_id = auth.uid()`, `claimed_at IS NOT NULL` (via `begin_upload`), `used_at IS NULL`, `kind IN ('photo', 'selfie')` (a `video_prompt` ticket is finished by 7.17a instead).
+- Effects: insert the `photos` row (server-generated id, `storage_path = photos/{caller}/{id}.webp`, the given `width`/`height`) if `ticket.kind = 'photo'`, at `ticket.position`; or set `verifications.selfie_path` for `ticket.verification_id` if `ticket.kind = 'selfie'`. Set `used_at = now()`. This function only records that a correctly processed image already exists at the expected path; it never touches Storage itself. The calling route is responsible for having already downloaded, validated, decoded, stripped, resized, re-encoded, and written the object with the secret key, and for deleting the `incoming` original, before calling this function; if any of that fails, this function is never called and the ticket simply expires unused (section 7.19's `purge_incoming` and `purge_upload_tickets` clean up the orphaned original).
+- Errors: `ticket_not_found`, `not_claimed`, `ticket_used`, `wrong_kind`.
+
+### 7.17a `public.process_video_prompt_upload(ticket_id uuid, video_format text, poster_width smallint, poster_height smallint, duration_ms integer, prompt_text text) returns jsonb`
+
+Parallel to 7.17, for `kind = 'video_prompt'` tickets only (section 0.14). Kept as a separate function rather than a branch inside `process_upload` because its effect is a different table with different upsert semantics, not an `insert ... on conflict (profile_id, position)` like a replaced photo.
+
+- Preconditions: ticket exists, `user_id = auth.uid()`, `kind = 'video_prompt'`, `claimed_at IS NOT NULL`, `used_at IS NULL`, `prompt_text` 1-200 chars, `video_format IN ('webm', 'mp4')`.
+- Effects: computes `video_path` as `video-prompts/{caller}/{ticket_id}.{video_format}` and `poster_path` as `video-prompts/{caller}/{ticket_id}.webp`, then upserts the caller's `video_prompts` row (unique on `profile_id`, so re-recording replaces it) with those paths and the given `poster_width`/`poster_height`/`duration_ms`/`prompt_text`. `video_format` cannot be a fixed `.webm` guess the way `begin_upload` (7.30) has to make one before any bytes exist, because MediaRecorder produces WebM everywhere except Safari, which produces MP4 (section 0.14): the calling route sniffs the real container from the downloaded bytes and passes the result here, and this function is what actually derives the final path from it, exactly the same "server derives the path, the client only names an already-validated fact about it" discipline `object_path` itself relies on elsewhere — `video_format` is a fact about bytes the route already inspected, not a path the client gets to choose. `prompt_text`, `poster_width`, `poster_height`, and `duration_ms` are accepted directly as parameters the same way, the same trust level as `width`/`height` in 7.17: self-disclosed content or measurements, not authorization decisions. Set `used_at = now()`. Like 7.17, this function only records that already-validated, already-written objects exist at the expected paths; it never touches Storage. Returns `{ videoPath, posterPath, oldVideoPath, oldPosterPath }`, the last two non-null only when this replaces an existing video prompt, for the calling route to delete from `video-prompts` the same way `process_upload` returns `oldStoragePath` for a replaced photo.
+- Errors: `ticket_not_found`, `not_claimed`, `ticket_used`, `wrong_kind`, `invalid_prompt_text`, `invalid_video_format`.
+
+### 7.18 `public.record_consent(kind consent_kind, version text, action consent_action) returns void`
+
+- Preconditions: `kind = 'genotype_data'` may only be `accepted` if `profile_answers.health_section_enabled` is being turned on in the same user flow (checked by the calling server action, not enforced here, since the ordering of "open the section" versus "accept its consent" is a UI concern; the function itself only ever appends the event the caller asked it to append).
+- Effects: insert one row into `consent_events`. Never updates or deletes an existing row.
+
+### 7.19 `public.pause_account() returns void` / `public.unpause_account() returns void`
+
+- Preconditions: caller `active` (for pause) or `paused` (for unpause).
+- Effects: `pause_account` sets `status = 'paused'` and `paused_at = now()`. This alone removes the caller from all matching immediately, through the existing `status = 'active'` requirement already present in `mutually_compatible` and `get_daily_feed`; no separate check is added. It does not touch any existing `connections` row. Any partner in an active connection sees the notice from section 2.5 the next time they view it. `unpause_account` sets `status = 'active'` and `paused_at = null`; the caller re-enters matching immediately if they have an open slot.
+- Invariant: pausing never ends a connection, and never clears a pending like; only the transition into Focused (section 7.7) clears likes, because that transition is triggered by a real connection consuming the last slot, not by a person stepping away.
+
+### 7.20 `public.record_meeting_checkin(connection_id uuid, see_again text, felt_unsafe boolean) returns void`
+
+- Preconditions: caller is a member of the connection (active or recently ended, so a check-in can still be recorded shortly after an End Connection triggered by this same flow).
+- Effects: upsert the caller's own `meeting_checkins` row for this connection; never readable by the other member, under any condition, unlike every other table gated by `can_view_profile`. If `felt_unsafe = true`, increment `unsafe_checkin_flags_received` in `user_abuse_signals` for the other party. Answering `see_again = 'no'` does not itself end the connection; the client offers End Connection as the immediate next step, using the ordinary flow in section 7.10, so the other person only ever sees a plain "this connection has ended," never a recorded preference.
+
+### 7.21 `public.create_date_plan(connection_id uuid, location_text text, planned_at timestamptz, expected_end_at timestamptz) returns jsonb` / `public.get_date_plan(id uuid) returns jsonb` / `public.delete_date_plan(id uuid) returns void`
+
+- Preconditions: caller is a member of an active connection; `expected_end_at > planned_at`; at most one open plan per connection at a time.
+- Effects: `create_date_plan` inserts the row and returns a short, pre-formatted share text naming the match's first name and verification status alongside the plan details, generated for the client to hand to the device's own share sheet; Focus never transmits it and never asks for or stores a third party's contact details. `get_date_plan` lets either member re-fetch the same summary later. `delete_date_plan` lets the creator cancel it early. The row is purged automatically 3 days after `expected_end_at` regardless (section 7.22).
+
+### 7.22 `public.dont_show_again(target uuid) returns void`
+
+- Preconditions: caller and target are distinct; no active connection between them is required (this can be used on someone who was never a match at all, e.g., a coworker seen in a feed card).
+- Effects: insert `(caller, target)` into `permanent_excludes`. Immediately and permanently removes `target` from `caller`'s own future candidate generation (section 7.4, step 2). Does not affect `target`'s own feed, does not notify them, and is unrelated to `blocks`: it never ends an existing connection, and if one exists this function does nothing to it (use Block for that, section 7.12).
+
+### 7.23 `public.submit_feed_feedback(day date, reasons text[]) returns void`
+
+- Preconditions: `day` is today or yesterday in the caller's own `user_daily` history; `reasons` drawn only from the fixed set in section 5.2, at most 3 selected.
+- Effects: upsert the caller's `feed_feedback` row for that day. Entirely optional and never required to keep using discovery. Read only by admins for qualitative review, per section 1's commitment that v1 ranking is deterministic and does not adapt itself from this signal.
+
+### 7.24 `public.reconsider_passed_profiles() returns setof feed_card`
+
+- Preconditions: caller `active`, `available`, and `feed_state()` currently reports `caught_up` (section 2.7); this function is never called as part of the ordinary daily flow and never mixed into `get_daily_feed`'s own five.
+- Effects: selects, at most 5, previously-passed candidates where: the pass is at least 90 days old; the target's profile (`updated_at`, or a photo or prompt added after the pass) has changed since the pass was recorded; the pair is still `mutually_compatible` today; the target is not in `permanent_excludes` for the caller. Returns them as ordinary `feed_card` values (ranked the same way) but does not write `feed_items` rows for them until the caller acts on one, at which point a normal `decide_feed_item`-equivalent path applies. Presenting this list is always an explicit choice the caller makes from the caught-up screen; nothing here runs automatically or silently reintroduces anyone into the daily five.
+
+### 7.25 Scheduled jobs (pg_cron unless noted)
+
+Build status per row is what section 0.18 added; nothing about a job's schedule or effect changed from what this table already said, except `purge_incoming`'s mechanism (was wrongly implied to be `pg_cron`; corrected, see that row and section 0.18).
+
+| Job | Schedule | Effect | Built |
+|---|---|---|---|
+| expire_likes | hourly | `pending` likes past `expires_at` become `expired` | Phase 2 (needs `likes`) |
+| refresh_ages | daily 03:00 | recompute `profiles.age` from `birth_date` | **Phase 1** |
+| connection_inactivity | daily 04:00 | active connections where `last_human_message_at` (or `created_at` if never set) is more than 3 days ago and `nudge_sent_at` is null: insert a system "Still here?" message and set `nudge_sent_at` (does not touch `last_human_message_at`). Those where the last human message (or creation) is more than 7 days ago and a second prompt has not been sent: insert a system message asking "Still interested?" with a one-tap End Connection action built into how the client renders that message type, and mark it sent. Those where it has been more than 10 days total with still no human message since: end with `faded`; increment `connections_faded_as_non_responder` in `user_abuse_signals` for whichever party is not `last_human_sender_id` (or for both if `last_human_sender_id` is null). This is a shortened, two-touchpoint version of the original 14-plus-3-day schedule: the manual End Connection action in section 7.10 has never had any waiting period attached to it, in either version; only the automatic backstop for when nobody acts has been shortened, from 17 days total to 10 | Phase 3 (needs `connections`/`messages`) |
+| purge_feed_items | daily | delete `feed_items` older than 30 days | Phase 2 (needs `feed_items`) |
+| purge_ended_messages | daily | delete messages of connections ended more than 30 days ago that have no open report; this now includes the closing-note system message, which has no separate retention rule anymore | Phase 3 (needs `connections`/`messages`) |
+| purge_incoming | hourly, via Vercel Cron calling `/api/cron/purge-incoming` with a bearer secret | delete anything in the `incoming` bucket older than 1 hour | **Phase 1** |
+| purge_upload_tickets | daily | delete `upload_tickets` rows that are used, or more than 24 hours past `expires_at` unused | **Phase 1** |
+| purge_date_plans | daily | delete `date_plans` rows more than 3 days past `expected_end_at` | Phase 4 (needs `date_plans`) |
+| purge_deleted_accounts | daily, via Vercel Cron calling `/api/cron/purge` with a bearer secret | for each `deletion_requests` past `purge_after`: delete Storage objects across all buckets with the secret key, then call `private._purge_user(profile_id)` | Phase 4 (needs `deletion_requests`, `private._purge_user()`) |
+| purge_verification_selfies | daily, same route | delete Storage objects for verifications decided more than 1 day ago and null `selfie_path` | **Phase 1** |
+
+### 7.26 `public.open_to_new_on() returns void` / `public.open_to_new_off() returns void`
+
+- Preconditions: caller `active`.
+- Effects: `open_to_new_on` sets `profiles.open_to_new = true`; `open_to_new_off` sets it `false`. Both take effect immediately and are picked up everywhere `available()` is evaluated (section 7.1), with no other side effect: no connection is touched, no like is cleared, unlike the transition into Focused through capacity itself (section 7.7), because this is a voluntary pause on new introductions, not the product's own signal that a slot is genuinely full.
+
+### 7.27 `public.share_contact(connection_id uuid, method contact_method, value text, confirmed boolean) returns void`
+
+- Preconditions: caller is a member of an `active` connection; `confirmed = true` is required (the client only sets this after showing the warning in section 2.8; the function itself has no way to know the warning was read, so this is a deliberate, minimal check rather than a real enforcement of informed consent, which is ultimately a UX responsibility); `value` 1 to 200 characters.
+- Effects: insert an ordinary message (`is_system = false`, `sender_id = caller`) containing a formatted line naming the method and the value, so it is delivered, stored, and later purged under exactly the same rules as any other message in that connection (section 8.4), never duplicated elsewhere. Separately, insert a `contact_share_events` row recording only the method and who shared, never the value. Sharing is one-directional by construction: this function only ever grants the recipient the caller's information; the recipient's own information is unaffected and requires their own separate call to reciprocate, if they choose to.
+
+### 7.28 `public.start_verification() returns jsonb`
+
+Nothing in the functions above actually creates a `verifications` row; this is the gap that does it, found while implementing Phase 1.
+
+- Preconditions: caller `onboarding`; the `verifications` table's own trigger enforces at most 3 submissions per day.
+- Effects: insert a `verifications` row with a pose code drawn at random from a small fixed set (look left, look right, peace sign, thumbs up, touch your nose), `submitted_at = now()`, `selfie_path` and `decision` null. Return `{ verificationId, poseCode }` so the client can show the instruction and immediately follow with `create_upload_ticket('selfie', verificationId)`. A verification attempt with no photo ever uploaded simply sits unresolved and does not block a later attempt; it is not itself an error.
+
+### 7.29 `public.submit_for_review() returns void`
+
+Nothing above actually moves a profile from `onboarding` to `pending_review` either; section 2.1 describes the seven onboarding steps but not the function that closes step 7. Found and fixed alongside 7.28.
+
+- Preconditions: caller `onboarding`; `profiles.first_name`, `gender`, `city_label` are set; `profile_sensitive.seeking` is set; `profile_answers.goal` is set; a `photos` row exists at position 1; the most recent `consent_events` for `terms`, `privacy`, and `sensitive_data` are all `accepted` at the current required version (section 8.1); at least one `verifications` row belonging to the caller has `selfie_path is not null` and `decision is null` (a selfie was actually uploaded and is awaiting review; submitting with no photo at all has nothing for an admin to look at). Any missing precondition returns a specific error naming what's missing rather than a generic failure, since this is the one gate a genuine new user needs to get past on their own.
+- Effects: bypass the profile-immutable-columns guard (this function is the one legitimate place outside `admin_review_verification` that changes `profiles.status`) and set `status = 'pending_review'`.
+- Errors: `already_submitted`, `missing_basics`, `missing_non_negotiables`, `missing_photo`, `missing_consent`, `missing_verification_photo`.
+
+### 7.30 `public.begin_upload(ticket_id uuid) returns jsonb`
+
+Called by the processing route immediately before any Storage or Sharp work, using the caller's own JWT, not the secret key; this is the check section 4.3 already described as happening "under the user's own JWT" before "the actual byte-moving happens with the secret key."
+
+- Preconditions: ticket exists, `user_id = auth.uid()`, `claimed_at IS NULL`, `used_at IS NULL`, `expires_at > now()`.
+- Effects: set `claimed_at = now()` (an atomic `UPDATE ... WHERE claimed_at IS NULL RETURNING ...`, so two concurrent calls for the same ticket cannot both proceed). Return `{ kind, object_path, position, verification_id }` read from the ticket row; this is the only way the route learns which object to fetch, closing the IDOR surface an earlier draft left open by accepting an arbitrary client-supplied `objectPath` instead of deriving it from a ticket the caller does not control the contents of. For `kind = 'video_prompt'`, additionally returns `poster_object_path`, `dest_path` (`video-prompts/{caller}/{id}.webm`), and `poster_dest_path` (`video-prompts/{caller}/{id}.webp`), computed the same deterministic way `photos`/`verification` destination paths already are for the other two kinds.
+- Errors: `ticket_not_found`, `ticket_expired`, `already_claimed`, `ticket_used`.
+
+---
+
+## 8. Privacy and data protection
+
+### 8.1 Sensitive categories
+
+Seeking, faith, heritage, genotype, and politics are special-category data under GDPR-style regimes and treated that way regardless of jurisdiction:
+
+- Collected only with explicit, versioned consent, recorded as append-only events (section 5.2) in two tiers: `sensitive_data` (seeking, faith, heritage, politics) is required to leave onboarding; `genotype_data` is entirely separate, required only if the user opens the health section, and is never implied by heritage answers or by the general sensitive-data consent. Washington's My Health My Data Act and GDPR-style regimes both treat genetic data as its own protected category, and the consent model reflects that split rather than bundling it in.
+- Stored in owner-only tables (`profile_sensitive`, `profile_answers`, `profile_heritage`). Other users never select them directly; they receive only the derived compatibility result and the display-only fields the user marked viewable, through a `private`-schema function that a client cannot call directly.
+- **Genotype is the one exception even to that:** every other must-have (kids, faith, politics, smoking, drinking, heritage) can surface as a plain-language `shared_factors` line when both people's answers happen to align (section 7.4) — genotype never does, in either direction, satisfied or not. It affects only whether `mutually_compatible` returns true or false; nothing about it is ever visible on a profile, a card, a match explanation, or a "compatible" indicator of any kind, and it is never logged or sent to analytics (Grindr's 2018 disclosure that HIV-status fields it collected were also reaching third-party analytics vendors, alongside device and location data that made re-identification possible, is the concrete failure mode this rules out). Section 2.3's "Genetic compatibility" wording exists specifically to keep this promise legible to the user.
+- Never used for ranking except the user's own `nice_to_have`/`important` heritage rules; genotype is must-only and never contributes to `reciprocal_score` even as a soft nudge, so it can never be reverse-engineered from ordering either.
+- Deleted with the account, and individually clearable at any time. Withdrawing consent is itself an event (`action = 'withdrawn'`), not a deletion of history, so the record shows what was true when.
+
+### 8.2 Location
+
+- The browser geolocation result, or a geocoded city, is rounded to two decimal places before it is sent to the server. The server rounds again. Raw values are never persisted or logged.
+- Others see only a distance bucket and the user's typed city label.
+- No "last active near" or map features.
+
+### 8.3 Photos
+
+- The original uploaded bytes are held in the private `incoming` bucket only for the seconds between upload and processing, then deleted; a cron job removes anything left behind within an hour as a safety net.
+- Processing strips EXIF, including GPS and device data, before the processed copy is written to `photos` or `verification`.
+- Buckets are private. Reads require a JWT and pass through `private.can_view_profile()`. There is no public URL.
+- Verification selfies are readable by admins with an aal2 session only and deleted within a day of the decision.
+- Screenshots cannot be prevented on the web. The privacy policy says so plainly.
+
+### 8.4 Messages and notes
+
+- Readable only by the two members and, for a specific reported message, by an admin reviewing that report.
+- Purged 30 days after a connection ends unless a report references the connection. The closing note is a message like any other and is purged on the same schedule; there is no separate, longer-lived copy of it anywhere in the schema.
+
+### 8.5 Retention schedule
+
+| Data | Kept until |
+|---|---|
+| Feed items | 30 days |
+| Pending likes | 30 days, then `expired`; expired and declined rows purged after 90 days; a like can also become `expired` immediately if its sender or recipient enters Focused (section 7.7) |
+| Messages of ended connections, including the closing note | 30 days after end, unless reported |
+| Raw upload originals (`incoming` bucket) | Seconds, deleted immediately after processing; 1 hour hard ceiling via cron |
+| Upload tickets | Used immediately, or purged 24 hours after expiry if unused |
+| Verification selfies | 1 day after decision |
+| Reports | 12 months after review |
+| Consent events | Indefinitely, as a historical record; this is the point of an append-only log |
+| Admin audit | Indefinitely (no personal content, ids only) |
+| Deleted accounts | Purged 7 days after request |
+| Everything else | Life of the account |
+
+### 8.6 What admins can see
+
+Profiles (viewable columns), verification selfies during review, reports with the reported message if one is attached, user status, `user_abuse_signals` for pattern detection, and audit history, all gated behind `private.is_admin_mfa`. Admins cannot read likes, cannot read chats except a reported message, and cannot see sensitive-category answers unless a report requires it.
+
+### 8.7 Logging
+
+- Server logs record request path, status, duration, and user id. Never bodies, emails, names, or coordinates.
+- Database logs are Supabase defaults; statement logging of parameters is off.
+- Errors sent to the client are codes, never stack traces or SQL.
+
+---
+
+## 9. Application security
+
+### 9.1 Authentication and sessions
+
+- Supabase Auth with two providers only: email OTP (6-digit code, 10-minute expiry, single use) and Google OAuth with PKCE. Magic links are disabled because they break in installed PWAs and are phishable.
+- Cloudflare Turnstile is required on the OTP request and on sign-up. Supabase Auth verifies the token server-side.
+- Sessions live in HttpOnly, Secure, SameSite=Lax cookies managed by `@supabase/ssr`. Access token lifetime 1 hour, refresh token rotation on, reuse detection on.
+- Admin accounts require both a linked Google provider and an enrolled TOTP factor. On first admin sign-in without an enrolled factor, every admin screen shows only "Set up two-factor authentication to continue"; nothing admin-shaped is reachable until the session reports `aal = 'aal2'`.
+- Sign-out revokes the refresh token server-side.
+- Email change requires confirmation from both old and new addresses (Supabase "secure email change").
+
+### 9.2 Input validation
+
+- Every server action and route handler validates input with a zod schema. Unknown keys are stripped. Strings are trimmed and length-limited to the same limits the database enforces.
+- The database is the last line: CHECK constraints on lengths and ranges, enums for categorical fields, triggers for cross-row rules (photo count, heritage value count, prompt shape).
+- Heritage values and faith labels are normalised with a single SQL function `private.normalize_key(text)` used everywhere, so "Yorùbá", "yoruba", and "YORUBA " match.
+- User text is rendered as text. No markdown, no HTML, no link unfurling in v1. URLs in messages are shown as plain text, not anchors.
+
+### 9.3 Browser hardening
+
+Headers set in `proxy.ts` (Next.js 16's replacement for `middleware.ts`) for every response:
+
+- `Content-Security-Policy`: `default-src 'self'; script-src 'self' 'nonce-{per-request}' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://{project}.supabase.co; connect-src 'self' https://{project}.supabase.co wss://{project}.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests`. Confirmed against Cloudflare's Turnstile documentation, which requires the literal `challenges.cloudflare.com` origin in both `script-src` and `frame-src`, not merely a nonce; the same per-request nonce is also set as an attribute on Turnstile's own script tag, per Cloudflare's documented nonce-propagation approach, so the widget's own dynamically loaded resources inherit it.
+- `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
+- `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`
+- `Permissions-Policy: camera=(self), geolocation=(self), microphone=(), payment=()`
+- `style-src 'unsafe-inline'` is a known compromise for Tailwind-generated inline styles in Next.js and is revisited in the red-team pass.
+- A per-request nonce forces dynamic rendering on every page that uses it. Accepted deliberately; a marketing or terms page with no user data could reasonably drop the nonce and use a stricter static CSP instead.
+
+### 9.4 Rate limits
+
+Enforced in the database unless stated, because the database cannot be bypassed.
+
+| Action | Limit | Where |
+|---|---|---|
+| Feed generation | 5 profiles per day | `get_daily_feed()` |
+| Waiting-list responses | 20 per day | `respond_to_like()` |
+| Messages | 30 per minute per connection, 500 per day | trigger on `messages` |
+| Reports | 10 per day | `report_user()` |
+| Photo/selfie uploads | 20 per day, 15 MB each at the `incoming` bucket ceiling | `create_upload_ticket()` plus `user_daily` |
+| Verification submissions | 3 per day | trigger on `verifications` |
+| Profile edits | 60 per hour | trigger on `profiles` |
+| OTP requests | Supabase defaults (per email and per IP) plus Turnstile | Supabase Auth |
+| Any server action | 120 per minute per user | in-memory token bucket in the Next.js server as a first filter; not relied on |
+
+### 9.5 Abuse controls
+
+- **Fake profiles:** human selfie review before visibility; at least two photos; a face required in the first (checked by the reviewer, not by software, in v1).
+- **Off-platform pushing and social handles on public profiles:** a trigger scans prompts for handle patterns, platform names, and payment app names, since a public profile is where follower-farming and validation-seeking actually happen (section 1's "nothing to collect"). A hit sets `review_flags.social_handle` and the profile is held for review before it becomes visible.
+- **Contact details typed casually into a private chat are a different situation, deliberately handled differently (section 2.8).** These are two connected adults, not a stranger farming followers, and Focus does not block or silently flag this by default; the same detection instead surfaces a one-time, dismissible friction line to the sender ("keep this private until you're comfortable"), never a refusal. The one exception is a pattern consistent with a known scam script (an unusually early push off-platform combined with other signals already covered under romance-scam patterns below), which is still surfaced to admins the same way any other reported concern is.
+- **Duplicate accounts:** one account per email; Google accounts are their own email. Nothing stronger in v1, by choice.
+- **Scraping:** 5 profiles a day, no list endpoints, no public photo URLs, human verification, CAPTCHA on sign-up.
+- **Harassment:** block is permanent and invisible to the blocked person; reports carry the exact message; ban keeps the email out.
+- **Underage:** date of birth with server-side age check; `underage` report reason routes to immediate ban on confirmation.
+- **Romance scam patterns:** `user_abuse_signals.reports_received` gives admins a repeat-offender view across all time, without exposing any number to users.
+- **Threats, stalking, and violence:** a `high` or `critical` severity report restricts the account automatically, before any human looks at it, per section 2.4, 2.5, and 7.13. The reporting user is never shown a verdict, only confirmation that a human will review it, and never asked to prove anything to unlock this protection.
+- **In-app safety UI is not an emergency service.** Every "I felt unsafe" or "I need help" path (sections 2.4, 2.6) leads first to a plain, unambiguous link to local emergency services and to sharing with a trusted contact, before anything else, and the product never implies it can dispatch help itself.
+
+### 9.6 Admin surface
+
+- `/admin` is a route group with a server-side `private.is_admin_mfa()` check (via `am_i_admin()` for the UI gate, and directly in every mutating function) in its layout and again in every action.
+- Admin pages render lists of verifications, reports, and `user_abuse_signals` flags only.
+- All mutations are RPCs that write `admin_audit` in the same transaction.
+- No admin function can read `likes` or arbitrary `messages`.
+
+### 9.7 Secrets
+
+| Secret | Lives in | Used by |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Vercel env, `.env.local` | browser and server |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Vercel env, `.env.local` | browser and server (public by design; RLS is the protection) |
+| `SUPABASE_SECRET_KEY` | Vercel env (server only), `.env.local` | upload-processing route, cron purge route |
+| `CRON_SECRET` | Vercel env | cron route bearer check |
+| `TURNSTILE_SECRET_KEY` | Supabase Auth settings | Supabase |
+| Google OAuth client id and secret | Supabase Auth settings | Supabase |
+| SMTP credentials | Supabase Auth settings | Supabase |
+
+`.env*` is gitignored. `.env.example` lists names only. CI fails if the built client bundle contains the `sb_secret_` prefix or the legacy string `service_role`. Rotation: any suspected leak rotates the key in the Supabase dashboard and redeploys.
+
+### 9.8 Dependencies and build
+
+- Runtime dependencies kept to: `next` (16.x), `react`, `react-dom`, `@supabase/supabase-js`, `@supabase/ssr`, `zod`, `sharp`. UI components are copied into the repo (shadcn style), not installed as a runtime package.
+- `pnpm-lock.yaml` committed. `pnpm install --frozen-lockfile` in CI. Lifecycle scripts disabled (pnpm default).
+- Dependabot weekly. `pnpm audit --prod` in CI, failing on high or critical.
+- Vercel deploys from the `main` branch only, from the `Dating App/app` root directory. Pull request preview deployments point at an ephemeral, per-PR Supabase branch, never at the production project.
+
+### 9.9 Error handling
+
+- Functions raise short codes. Server actions map codes to user copy and log the code with the user id. Unexpected errors return `unexpected` to the client and the full error to the server log.
+- No error path ever reveals whether a specific email is registered, whether a specific person liked you, whether a profile id exists, or a person's current available/focused state beyond what the product intentionally shows. `not_available` is deliberately used for both "the target became focused" and "the caller became focused" so the two cannot be distinguished from the error alone.
+
+---
+
+## 10. Availability and operations
+
+### 10.1 Environments
+
+| Environment | Database | App | Purpose |
+|---|---|---|---|
+| Local | Supabase CLI local stack in Docker (`npx supabase start`) | `pnpm dev` | all development and tests |
+| Staging (per pull request) | Ephemeral Supabase branch, created automatically by the Supabase GitHub integration when a PR opens, migrations applied automatically, destroyed when the PR closes or merges. Billed hourly at $0.01344/hour (about $0.32/day) only while the PR is open; confirmed against the live Supabase cost API for this organisation on 2026-09-09. | Vercel preview deployment for that PR, configured with that branch's URL and publishable key | UI and integration review with synthetic data only; never touches production data |
+| Production | Hosted Supabase project, Pro plan: $25/month base, which includes a $10/month compute credit covering one Micro instance, so the expected steady-state bill is $25/month at this scale; confirmed against the live Supabase cost API for this organisation on 2026-09-09 | Vercel production from `main` | real users |
+
+### 10.2 Migrations
+
+Every migration is written as either **expand** or **contract**:
+
+- **Expand** migrations are additive and backward-compatible. They run automatically: applied to a PR's ephemeral branch on open, and to production via CI on merge to `main`, immediately followed by the Vercel deploy that depends on them.
+- **Contract** migrations are destructive or narrowing and are never run automatically. A contract migration is written as its own pull request, labelled as such in the filename, and is applied to production manually, only after confirming the application version that depended on the old shape is no longer live and the replacement has been stable for at least one full day. CI refuses to merge a PR that mixes a contract migration with application code in the same change.
+
+Seed data for local development lives in `supabase/seed.sql` and never contains real people.
+
+### 10.3 Backups and restore
+
+- Hosted project: Supabase daily backups (7-day retention on the Pro tier). Point-in-time recovery is a paid add-on and is not enabled in v1.
+- Restore drill: once before launch, restore the latest backup into a fresh local stack and run the test suite against it.
+- Storage objects are not in database backups. Photos are re-uploadable by users; the app tolerates a missing object by showing a placeholder.
+
+### 10.4 Monitoring
+
+- Vercel: deployment status and function errors.
+- Supabase: weekly review of the security and performance advisors through the dashboard or MCP; alert email on high CPU or disk.
+- A daily cron route logs a one-line health summary: active profiles, active connections, open reports, pending verifications. No personal data.
+
+### 10.5 Incident basics
+
+- Suspected key leak: rotate in Supabase, update Vercel env, redeploy, review audit and logs. A secret key can be revoked without invalidating every signed-in user's session, unlike the old service_role key.
+- Suspected data exposure: pause sign-ups (feature flag), assess with the advisors and logs, fix, notify affected users by email in plain language, document.
+
+---
+
+## 11. Testing strategy
+
+### 11.1 Database tests (pgTAP, run by `supabase test db`)
+
+- User A cannot select any row from `likes`, including their own outgoing likes.
+- User A cannot select B's `profile_sensitive`, `profile_answers`, `profile_private`, `profile_heritage`, `preferences`, or `user_abuse_signals`, even A's own row of the last one.
+- User A cannot select B's `profiles` row or `photos` unless one of the five `can_view_profile` conditions holds; each condition has a positive and a negative test, including a pending like from a sender who has since become focused, and a feed item whose target has since become focused (must not grant visibility in either case).
+- User A cannot insert into `feed_items`, `likes`, `connections`, `user_abuse_signals`, or `upload_tickets`.
+- User A cannot update `profiles.status`, `verified_at`, or `capacity` outside `set_capacity()`.
+- A non-admin cannot execute any `admin_*` function; an admin without an aal2 session cannot execute any `admin_*` function or select `admins`, `admin_audit`, or `user_abuse_signals`; the same admin, after completing TOTP enrollment and a challenge in the test harness, can.
+- **Every function this document designates `private` is called directly through the REST endpoint (`POST /rest/v1/rpc/available`, `.../mutually_compatible`, `.../reciprocal_score`, `.../can_view_profile`, `.../is_admin`, `.../is_admin_mfa`, `.../normalize_key`) with a valid user JWT and confirmed to return a schema-not-found style error, not a permission error and not a result.** This is a PostgREST-layer test and holds for every `private` function regardless of whether it also carries a narrow `GRANT EXECUTE ... TO authenticated` for internal use by a policy or trigger (section 6.5): schema exposure, not the grant, is what this test verifies. A separate, raw-SQL-level test (not through PostgREST) confirms that the functions *without* such a grant, like `is_admin`, are also unreachable by a plain `SELECT`/`PERFORM` as the `authenticated` role, which is a different and additional property from the REST-layer one.
+- Storage policies: A can read B's photo only under `can_view_profile`; nobody but an aal2 admin can read `verification` objects; nobody but the secret key can read `incoming` objects.
+
+### 11.2 Function and invariant tests (Vitest against the local stack, using real JWTs for several test users)
+
+- Capacity: with capacity 1, a user who is in a connection gets `at_capacity` from `feed_state()` and an empty feed; `respond_to_like` and `decide_feed_item` raise `not_available` when relevant.
+- **The exact race from the second review:** user A, capacity 1, is shown a feed while available. Two requests are then issued concurrently: request 1 forms a connection between A and B through the normal like flow; request 2, from A, calls `decide_feed_item('like')` against a different, already-served card C. Assert exactly one connection forms (A–B), and assert zero `likes` rows exist from A to C afterward, regardless of which request's database work happens to interleave first.
+- **Stale feed backfill:** user A's feed for today includes target T. T forms an unrelated connection that fills their capacity. A calls `get_daily_feed()` again the same day: assert T is no longer present, and if a compatible available replacement exists, assert a new card appears in T's place while the total for the day stays at 5.
+- **Clean slate on Focused:** user A, capacity 1, has three incoming pending likes and one outgoing pending like when a fourth party forms a mutual connection with A. Assert all three incoming likes and the one outgoing like are now `expired`, and assert none of them resurface even after A later ends that connection and becomes available again.
+- Concurrency: 20 parallel `respond_to_like` calls from different likers against one user with capacity 1 produce exactly one `connected` and 19 `not_available`.
+- Mutual pre-screen: a user whose `kids_must` excludes `dont_want` never sees a `dont_want` profile, and that profile never sees them either.
+- Heritage: with `use_heritage` on, `must` with keys `['yoruba']` matches a profile whose community values include "Yorùbá"; `important` outranks `nice_to_have` in feed order but neither changes membership; with `use_heritage` off, the same rules have no effect on either.
+- Waiting list: likes are surfaced one at a time, oldest first; a like from a sender who has since become focused is skipped; declined likes never resurface.
+- Browse cap: the sixth candidate is never served; calling `get_daily_feed()` twice returns the same five (or fewer, after a backfill miss).
+- End connection: frees both slots; the closing note appears only as a message and is confirmed absent from any `connections` column; `user_abuse_signals` updates for the ender only, and is confirmed unreadable by either user via a direct select.
+- Inactivity attribution: a connection where A sends the last human message and B never replies, after the nudge and fade window, increments `connections_faded_as_non_responder` for B only; a system nudge message does not reset `last_human_message_at`.
+- Block: ends the connection with no note, purges feed items and likes, and `can_view_profile` becomes false both ways.
+- End Connection with no note: assert the partner sees a plain "This connection has ended" system message and that `connections_ended_with_note` does not increment for the ender.
+- Pause: a paused user disappears from a third party's fresh `get_daily_feed()` immediately; their existing active connection's partner can still call `can_view_profile` successfully, still receive messages, and can call `end_connection` immediately with no error; unpausing restores normal matching eligibility.
+- Restriction: filing a report with reason `assault_or_violence` against an `active` target immediately flips their status to `restricted`; a subsequent message attempt from that user in any of their connections is rejected with `account_restricted`; their existing connections remain queryable by their partners; `admin_review_report` with `resolution = 'cleared'` returns them to `active` and restores messaging in the same test.
+- Safety reporting window: a report with reason `harassment` about an interaction more than 30 days old with no current connection, feed item, or like is accepted, where an ordinary `disrespectful` report about the same age interaction is rejected as out of window.
+- Meeting check-in privacy: user A's `meeting_checkins` row for a shared connection is never selectable by user B under any RLS condition, including an active connection between them.
+- Date plan: `date_plans` created by A is readable by B (the connection partner) but contains no contact-detail column at all; the row is gone from a direct select after the purge job runs 3 days past `expected_end_at`.
+- Deletion: after `request_account_deletion()` plus the purge job, no rows remain for the user except retained reports and audit, and Storage is empty for that folder across all three buckets.
+- Upload ticket pipeline: `begin_upload` rejects a ticket belonging to another user, an already-claimed ticket, an already-used ticket, and an expired ticket (at 5 minutes, well before the underlying Supabase URL's own 2-hour window closes), even though the Storage object itself would still be fetchable by the secret key; two concurrent `begin_upload` calls for the same ticket produce exactly one success; `process_upload` rejects a ticket that was never claimed via `begin_upload`; a file uploaded via the signed URL larger than the `incoming` bucket ceiling is rejected before it reaches the processing route; a non-image file with an image extension is rejected by byte-sniffing; a successfully processed image leaves no object behind in `incoming`.
+- Consent: a user can record a `sensitive_data` `accepted` event at version 1, then later a second `accepted` event at version 2, without any conflict; the derived current state reflects version 2; a `withdrawn` event is recorded without deleting the prior `accepted` event.
+
+### 11.3 Application tests
+
+- Server actions: zod rejection of oversize and malformed input; error codes never contain SQL.
+- Upload routes: the ticket route never accepts a `kind` outside `photo`/`selfie`; `processUpload` accepts only a ticket id and rejects any attempt to pass a storage path directly; the processing route rejects non-images by byte sniffing, rejects a decoded pixel count above the sanity ceiling before full decode, strips EXIF, and writes to a server-derived path only.
+- Playwright smoke: sign up with OTP (local inbucket), complete onboarding, get approved via the admin page (as an aal2-enrolled test admin), see a feed, like, form a connection with a second test user, chat over Realtime, end with a note, verify slot freed and the ended party immediately eligible to appear in a fresh feed.
+- Headers: a test fetches `/` and asserts every header in section 9.3, including a fresh nonce on each request and its presence on the Turnstile script tag on the sign-up page.
+- Bundle check: the client build contains no `sb_secret_`-prefixed string and no server-only env names.
+
+### 11.4 Continuous integration (GitHub Actions on every pull request)
+
+1. `pnpm install --frozen-lockfile`
+2. `pnpm lint` and `pnpm typecheck`
+3. `supabase start`, apply migrations, `supabase test db`
+4. `pnpm test` (Vitest)
+5. `pnpm build`, bundle secret check
+6. Playwright smoke against the local build
+7. `pnpm audit --prod`
+8. Verify the PR contains no migration file tagged `contract` alongside application code changes
+
+Merge to `main` additionally runs `supabase db push` (expand migrations only) to production and lets Vercel deploy. A contract migration merge is a separate, manually-triggered production step.
+
+---
+
+## 12. Review process (standing order)
+
+Every phase in section 14 ends with three passes, in this order, before the next phase starts.
+
+### 12.1 Code review
+
+Ordinary review for correctness, clarity, and adherence to this document. Any deviation from the spec is either fixed or written back into the spec with a reason.
+
+### 12.2 Red-team pass
+
+Adversarial, performed against the running local stack with raw HTTP calls and SQL, not through the UI.
+
+- Call every RPC with another user's ids, stale ids, and random uuids.
+- **Attempt to call every function this document designates `private` directly through the REST endpoint and confirm the schema itself is unreachable, not merely permission-denied.**
+- Select from every table as a normal user; attempt to read likes, others' answers, others' sensitive fields, others' photos, verification selfies, and `user_abuse_signals` for any profile including your own.
+- Hit `get_daily_feed()` and `respond_to_like()` in parallel from many sessions; assert capacity, caps, and the available/focused candidate exclusion all hold, including the specific caller-side race from section 11.2.
+- Read back an already-generated feed after artificially forming a connection for one of its targets in a separate session; confirm the target disappears on the next read.
+- Force a user into Focused with several pending likes outstanding and confirm they are all cleared, not merely hidden.
+- Attempt `begin_upload` and `process_upload` with a fabricated or another user's ticket id, and with a raw object path where a ticket id is expected; attempt `process_upload` on a ticket never passed through `begin_upload`.
+- Fetch Storage objects by guessed path in all three buckets with a valid JWT.
+- Subscribe to Realtime on a connection you are not in.
+- Submit prompts and messages containing script tags, long unicode, right-to-left overrides, and social handles; verify rendering and flagging.
+- Attempt admin routes and admin RPCs as a normal user, and as an admin whose Google account is linked but has not completed TOTP enrollment.
+- Load the sign-up page with the CSP active and confirm Turnstile actually renders and verifies, not just that the CSP report console is quiet.
+- Search the client bundle and network responses for secrets, emails, coordinates, and birth dates.
+- Request deletion and verify the purge is complete, including all three Storage buckets and the ticket table.
+- Review Supabase security advisors and fix every finding.
+- Try to learn whether a specific person liked you, or whether a specific person is currently focused, through timing, error messages, or state differences beyond what the product intentionally reveals.
+- Attempt to upload an image crafted to decompress to a very large pixel count and confirm the guard rejects it before full decode.
+
+Findings are fixed before the sane-mode pass.
+
+### 12.3 Sane-mode pass
+
+Sober review against section 1:
+
+- Does every screen serve attention over volume? Is anything counting, listing, scoring, or nudging toward more?
+- Is any feature present that a serious 34-year-old would not understand in five seconds?
+- What can be removed? Remove it.
+- Do the non-negotiable and heritage flows work for a Haitian, a Yoruba, a Gujarati, and a fourth-generation American, with the same fields?
+- Are the copy and error messages calm and plain?
+- Is the code smaller than it was before the red-team fixes, or has security work added complexity that can be simplified?
+- Does anything in this phase quietly reintroduce a visible count, list, score, or preserved backlog that section 1 rules out?
+- Is anything this document calls internal actually reachable, or merely undocumented?
+
+---
+
+## 13. Goals cross-check
+
+| Research or review finding | Design decision |
+|---|---|
+| Acceptance odds fall 27% across a browsing session (Pronk and Denissen) | 5 profiles a day, one at a time, no going back |
+| Large pool plus reversible choice is the worst outcome (D'Angelo and Toma) | Capacity limit; ending a connection requires a note; no undo on Pass |
+| 82% swipe without intending to meet (Coffee Meets Bagel 2025) | No like counts, no feed, no handles; human verification before visibility |
+| 44% use Tinder for a confidence boost (LendEDU) | Nothing to collect; likes are invisible until surfaced one at a time; no visible score of any kind |
+| Hinge paywalls kids, family plans, politics, education | All non-negotiables free and set at onboarding; money never changes eligibility or visibility, permanently |
+| Mainstream apps stop at race-level ethnicity | Self-written heritage fields, switched on in settings, each rule nice to have, important, or must |
+| Cornell: race filters and same-race algorithms reinforce bias | User-stated preference only; no inference; no ranking except the user's own rules |
+| Genotype is a first-date question in Nigeria | Optional, off-by-default health section with its own separate consent, decoupled from heritage |
+| Physical attraction is a must-have for 97% | Photos shown, first must show a face; non-negotiables shown above them |
+| Ghosting and "ghostlighting" (66.5%, BLK) | End-with-a-note, fade detection attributed to whoever actually stopped replying; held as an internal abuse signal, never a public score |
+| A hidden backlog of admirers undermines the "no illusion of options" premise (first external review) | Focused users are removed from every other user's candidate pool; only pre-existing likes from senders who were available at send time could ever surface |
+| A preserved, not merely paused, backlog still contradicts the premise (second external review) | Every other pending like, both directions, is cleared the instant a user's last slot fills; becoming available again is a genuine clean slate |
+| A function labeled internal was still reachable via the Data API (second external review) | Every non-client-facing function lives in a `private` schema that is never exposed, not merely named with an underscore |
+| A caller, not just a target, could bypass focus through a race (second external review) | Every availability check is symmetric: both sides, at every step, with the row-locked transaction as final authority |
+| An already-generated feed could still show a now-focused person (second external review) | Availability is re-checked at read time with backfill, not only at generation time |
+| Sidekick patent claims require hiding the profile and refusing likes at the limit | The available/focused mechanism and the clear-on-focus rule were designed for product reasons independent of the patent; whether this reading is closer to or further from the claims is a Phase −1 legal question |
+| Hinge Your Turn Limits raised responsiveness 20% | Waiting list must be answered before new discovery |
+| Diaspora apps bundle dating with community, and community is where the pool comes from | No community lane in v1; launch inside an existing community |
+| A single "end connection" flow conflates a bad date with a dangerous one, confirmed against how Hinge, Tinder, and Bumble each separate ordinary unmatching from safety reporting (third external input) | End, Block, and Report are three distinct actions with distinct guarantees (section 2.4); reports carry a severity that can automatically restrict an account before any human reviews it |
+| `paused` existed as an enum value since the first draft with no defined behavior, and an existing connection could leave the other person waiting indefinitely (third external input) | Pausing is self-service, removes a person from all new matching immediately, and never traps their existing connection partner, who gets an immediate one-tap way out (section 2.5) |
+| A 17-day automatic silence window contradicted the product's own premise of one present connection (third external input) | Shortened to a 10-day automatic backstop; manual ending has never had a waiting period in any version |
+| Building a real emergency-dispatch feature would be a liability and an operational promise this product cannot keep (third external input, explicit caution) | Date planning generates a share-sheet summary the user sends themselves, exactly as Bumble's Share Date works; Focus never stores a third party's contact details and never claims to monitor or dispatch help |
+| Ranking that only scores the viewer's preferences ignores whether the candidate would want to see the viewer back, unlike a genuine reciprocal recommender (fourth external input) | `reciprocal_score` is symmetric by construction, crediting both sides' preferences about each other |
+| An infinite-feeling feed that quietly recycles rejected profiles once a pool is exhausted trains people to mistake volume for possibility, the opposite of this product's premise (fourth external input) | Focus states plainly when a pool is exhausted and offers explicit, user-initiated choices instead of silently widening the funnel |
+| A compatibility percentage implies false precision about something inherently uncertain (fourth external input) | No score is ever shown; only a short, factual list of what two people share |
+| At capacity 2 or 3, an open slot by the numbers can still be unwanted right now, and forcing a capacity change to express that is a false choice (fifth external input) | `focus_now` is a separate, self-service toggle that closes the remaining slot without touching the capacity number itself |
+| A rematch feature would contradict how Hinge and Tinder both treat unmatching as permanent (fifth external input) | Confirmed as already true by construction: the candidate query excludes anyone with any connections row, ended or active, permanently; stated explicitly rather than left implicit |
+| Automatically revealing contact information, or making it a side effect of matching, ignores RAINN's guidance to withhold personal details until real trust exists, and Hinge's own warning about early off-platform pushes (fifth external input) | Contact sharing is a deliberate, one-directional, one-method-at-a-time action with an explicit warning; never automatic, never mutual by default |
+
+---
+
+## 14. Phased delivery
+
+Each phase ends with the three review passes in section 12.
+
+### Phase −1: Legal and technical prerequisites (gates Phase 2 only)
+
+- Commission a freedom-to-operate review of the capacity and visibility mechanism (sections 2.2 and 7) against the Sidekick Dating patent family (US 11,895,115, its pending continuation, and US 12,003,509), covering the current design specifically: focused users removed from candidate pools, and every other pending like cleared the moment a user's last slot fills. `Dating App/docs/legal/2026-09-09-phase-neg1-fto-scope-memo.md` briefs the attorney on this: verified claim text, a claim-element mapping against the current design, and one open lead (a possible broader Sidekick/De Lazzari patent portfolio) that needs a direct USPTO search, not a search-engine pass.
+- This gates the start of Phase 2 specifically, because Phase 2 is where `private.available()`, `private._form_connection()`, `get_daily_feed()`, and the rest of the patent-adjacent mechanism get implemented. Phase 0 and Phase 1 do not touch capacity, matching, or visibility logic and may proceed in parallel with this review.
+- Confirm the stack decisions in this document (Next.js 16, Supabase publishable/secret keys, Supabase Pro at $25/month, ephemeral staging branches, the 2-hour Supabase upload URL paired with a 5-minute application ticket) are still current before Phase 0 begins, since they were verified against live sources on 2026-09-09 and could drift before implementation starts.
+
+### Phase 0: Project setup
+
+- Create the Supabase project (cost confirmed at $25/month base). Configure Auth providers, Turnstile, SMTP for development, the GitHub branching integration for ephemeral PR previews, and the `private` schema, confirming it is absent from the exposed-schema configuration.
+- Scaffold `Dating App/app` with Next.js 16, TypeScript, Tailwind, `@supabase/ssr`, zod, sharp. Add root `.gitignore`. Add `proxy.ts` with the header set from section 9.3, including the Turnstile-compatible CSP, from the start.
+- Local stack running; CI skeleton green on an empty migration, including the expand/contract label check and the private-schema-unreachability test.
+- Exit: `pnpm dev` shows a sign-in page with a working Turnstile widget; `supabase test db` runs zero tests successfully; a test PR produces a working ephemeral preview.
+
+### Phase 1: Foundation
+
+- Migrations (all expand): enums, `profiles`, `profile_sensitive`, `profile_private`, `profile_answers`, `profile_heritage`, `preferences` (including the `height_pref` columns added in section 0.16 — height is a non-negotiable, not matching logic, so it belongs here, not Phase 2), `heritage_preferences`, `photos`, `verifications`, `upload_tickets`, `video_prompts` (section 0.14, the optional video prompt — profile/upload surface, same reasoning), `consent_events`, `admins`, `admin_audit`, `user_daily`. RLS for all. `private.is_admin()`, `private.is_admin_mfa()`, `private.normalize_key()`, `public.am_i_admin()`, `public.am_i_admin_identity()`, `public.create_upload_ticket()`, `public.begin_upload()`, `public.process_upload()`, `public.process_video_prompt_upload()`, `public.record_consent()`, `public.start_verification()`, `public.submit_for_review()`, triggers for lengths and counts.
+- `private.can_view_profile()` is introduced here in a deliberately partial form: only the self and admin cases from section 6.2 are possible, since the connection, feed-item, and surfaced-like cases depend on tables that don't exist until Phase 2. This is correct for what Phase 1 actually needs (nobody can discover or match with anyone yet), not an oversight; Phase 2 extends the same function with `CREATE OR REPLACE`, purely additively. `private.available()` is not needed anywhere in Phase 1 and is deferred to Phase 2 entirely.
+- Auth flows including admin TOTP enrollment, onboarding screens (with the two-tier append-only consent from section 8.1), the pose-challenge-and-review verification flow (`start_verification`, the ticket-and-process upload pipeline, `submit_for_review`), admin verification queue behind `is_admin_mfa`.
+- The four section 7.25 cron jobs whose tables already exist in this phase (section 0.18): `pg_cron` itself, `private.refresh_ages()`, `private.purge_upload_tickets()`; the `service_role`-only `public.list_stale_incoming_objects()`, `public.list_stale_verification_selfies()`, `public.clear_verification_selfie_path()`; the Vercel Cron infrastructure and its two routes, `/api/cron/purge-incoming` and `/api/cron/purge`, both gated by the `CRON_SECRET` bearer secret. Phase 4 extends `/api/cron/purge` with `purge_deleted_accounts` rather than creating the Vercel Cron mechanism from scratch.
+- Exit: a new user can complete onboarding and be approved by an aal2-enrolled admin; pgTAP covers every policy in this phase, including the `profile_sensitive` split, the admin MFA gate, the private-schema unreachability test for every helper introduced so far, the video prompt and height preference CHECK constraints (sections 0.14, 0.16), and the four cron jobs above.
+- **Status: complete as of 2026-09-09** (see revision history 0.13 through 0.23). Every exit criterion above is met and independently tested: 93 pgTAP tests, 18 Vitest tests, and a Playwright smoke test covering signup through submit-for-review. The one deliberate exception is automated E2E coverage of the admin's own approval action, which needs a real aal2/TOTP session — recorded here as a known test-automation limitation, not a Phase 1 blocker, since the underlying `admin_review_verification` RPC is itself real, wired, and now covered by pgTAP against its actual approve/reject outcomes (0.23). One real, manual admin-approval journey (a human admin, enrolled in TOTP, approving a real submitted profile end to end) is required in the pre-launch regression pass before Phase 4's exit, alongside the iOS PWA camera verification below.
+
+### Phase 2: Core loop (gated by Phase −1)
+
+- Migrations: `feed_items`, `likes`, `connections` (with `last_human_message_at`/`last_human_sender_id`, no `end_note`), `user_abuse_signals`, `blocks`; `private.available()`, `private.can_view_profile()`, `private.mutually_compatible()`, `private.reciprocal_score()`, `public.get_daily_feed()`, `public.feed_state()`, `public.decide_feed_item()`, `private._send_like()`, `private._form_connection()` (including the clear-on-focus step), `public.next_waiting_like()`, `public.respond_to_like()`, `public.set_capacity()`, `public.block_user()`, `public.pause_account()`, `public.unpause_account()`, `public.open_to_new_on()`, `public.open_to_new_off()`, `public.dont_show_again()`, expire and purge jobs. `profiles.paused_at` and `profiles.open_to_new` are added here too, since both depend on the same status and availability machinery as the rest of this phase. `permanent_excludes` is added here alongside `dont_show_again()`.
+- Screens: home (state machine over `feed_state()`), card, waiting list, connections list, capacity setting, and the paused-partner notice with its one-tap End Connection. No accountability or score display anywhere.
+- Exit: two test users can connect; the focused-exclusion, symmetric-race, stale-feed-backfill, and clean-slate concurrency tests all pass; a paused user's existing connection stays visible and messageable to their partner, who is never blocked from ending it immediately; RLS and schema-unreachability tests for `likes` and `user_abuse_signals` pass.
+
+### Phase 3: Chat and ending
+
+- Migrations: `messages` (with `is_system`), `contact_share_events`, triggers, Realtime publication, `end_connection()`, `share_contact()`, inactivity job with human-message attribution.
+- Screens: chat, the Share Contact flow with its explicit warning, end-connection sheet with note (delivered only as a message), faded state. No public accountability signal on cards, and no visible connection-progression level or badge anywhere (section 2.8).
+- Exit: Playwright smoke passes end to end, including the fade-attribution test, a contact share landing only in the message stream with a matching metadata-only event row, and confirming no `end_note` persists anywhere but the message stream.
+
+### Phase 4: Safety, privacy, launch readiness
+
+- `reports` (with `severity` and `resolution`), `meeting_checkins`, `date_plans`, `report_user()` (including the safety-reason eligibility window and the automatic restriction effect), `record_meeting_checkin()`, `create_date_plan()`/`get_date_plan()`/`delete_date_plan()`, admin report review with severity-ordered queueing and the restricted-to-active-or-banned resolution, `request_account_deletion()`, `private._purge_user()`, `purge_date_plans`, and `purge_deleted_accounts` added to the `/api/cron/purge` route Phase 1 already built (section 0.18) rather than a new mechanism, deleting across all five storage buckets this phase (Storage byte deletion for the `incoming`/`video-incoming` originals and verification selfies is already covered by Phase 1's own cron jobs by the time an account reaches deletion). `proxy.ts` header verification including the Turnstile CSP, PWA manifest and install prompt, privacy and terms pages, restore drill, production deploy.
+- Screens: the End/Block/Report split from section 2.4 with severity-appropriate copy, the private post-meeting check-in with its separate "I felt unsafe" branch, the date-plan share-sheet flow and its single check-in prompt, and the plain link to emergency services and trusted-contact sharing that every "I need help" path leads to first.
+- Exit: red-team checklist fully green on production configuration, including that a `high` or `critical` report actually blocks the reported account's outgoing messages within the same request and that an admin can resolve a restriction in either direction; a friend can install it on a phone and complete the loop, including sharing a date plan through their own phone's share sheet.
+
+---
+
+## 15. Decisions deferred
+
+- The product name and domain.
+- ~~Production email provider~~ Decided 2026-09-09: Resend, with authentication email on its own subdomain, separate from any future marketing sending. Supabase's own default SMTP is 2 messages/hour, uncomfortably close to unusable outside development; Resend is one of Supabase's own listed compatible providers. Runbook and acceptance criteria: `docs/ops/2026-09-09-production-email-resend-setup.md`. Account creation, domain verification, DNS records, and the Supabase dashboard SMTP fields are all steps only the project owner can complete (they need a live Resend account and DNS access neither of which this assistant can act on); the runbook spells out exactly what to do and in what order.
+- Whether iOS Safari's PWA camera access is reliable enough for selfie capture, to be tested in Phase 1 on a real phone. Test plan formalized 2026-09-09: `docs/testing/2026-09-09-ios-pwa-camera-verification.md`. Still open — needs an actual physical iPhone, which this assistant has no access to; the plan is written for the project owner or another human tester to execute and report results against.
+- Freedom-to-operate review of the Sidekick patent family, a hard Phase −1 gate; see section 14.
+- Whether human selfie review remains sustainable past low thousands of users, and, if not, whether to introduce the single flat, universal fee described in section 1.
+- A staging environment beyond ephemeral per-PR branches, if the team grows past one contributor.
+- Whether `style-src 'unsafe-inline'` in the CSP can be tightened once the Tailwind build output is audited in the red-team pass.
+- Whether a like cleared by the Focused transition should carry a distinct status value from one that naturally aged out at 30 days, for future internal analytics; currently both use `expired` and the distinction is not user-facing either way.
+- In-app voice and video calling, so two people can talk before ever exchanging a phone number, the way Bumble's in-app calling works. Explicitly out of v1 scope by the fifth external input's own recommendation, not by oversight; Share Contact (section 2.8) covers v1's needs on its own.
+- A sweep for Storage objects orphaned by a `process_upload` failure after the object was already written (section 0.6). Belongs with Phase 4's other cron infrastructure, not built standalone during Phase 1.
+- Whether `profiles.capacity` needs its own immutable-column guard, deferred until Phase 2's `set_capacity()` exists to have an opinion about it (section 0.6).
+- Full Unicode-confusables resistance for the social-handle scan; `unaccent()` handles ordinary diacritic evasion only (section 0.6).
+- Heritage's "acceptable values" currently default to the user's own entered values for a field (self-referential), not a separately typed acceptance list — revisit once Phase 2 matching shows whether users actually want to accept heritage values other than their own (section 0.6).
+- Whether Focus Pick, specifically, should lead with its video prompt (if the person recorded one) before the photo grid, rather than photos always leading (section 0.12). An experiment to try once video exists and there's real data, not a decision made now — photos stay first everywhere else; hiding them anywhere would be gimmicky given how much attraction genuinely depends on them.
+
+---
+
+## 16. Glossary
+
+- **Capacity**: the number of active connections a user allows themselves, 1 to 3.
+- **Connection**: a mutual match that has formed and is active. Occupies one slot for each member.
+- **Slot**: capacity minus active connections. "Open slot" means at least one.
+- **Available**: `active_connections(p) < capacity(p)`. Can appear as a candidate in others' feeds, in an already-shown feed on re-read, and can receive new likes.
+- **Focused**: not available. Removed entirely from other users' candidate pools, including on re-read of an already-generated feed; cannot receive new likes; and, on the transition into this state, every other pending like involving the user, in either direction, is cleared rather than merely held.
+- **Feed item**: one profile served to one user on one day, re-validated for availability every time it is read back, not only when it was generated.
+- **Waiting list**: pending likes addressed to a user, surfaced one at a time, only from senders who are currently available, only when the user has an open slot.
+- **Non-negotiables**: the fields a user can mark must-match.
+- **Heritage**: self-written background, community, origin, language, and raised-in fields. Used in matching only when the user turns "Use heritage in who I'm shown" on.
+- **Importance**: the weight a user gives a heritage rule: nice to have (1), important (3), or must (hard filter).
+- **Faded**: a connection closed by the inactivity job after a nudge went unanswered, attributed internally to whichever party stopped sending human messages. The automatic backstop is 10 days total; manual ending has never had a waiting period.
+- **Starting Fresh**: what a user is told when their last open slot fills and every other pending like involving them expires (section 2.2, 0.10). Expires the opportunity, not the person — no identity, count, or "here's who you gave up" is ever shown, and the two people involved may still be introduced again later like anyone else, once ordinary availability and compatibility allow it.
+- **End, Block, Report**: three distinct ways a connection or interaction can conclude, with three distinct guarantees. See section 2.4. End is ordinary and its note is optional. Block is permanent, silent, and mutual. Report is severity-tiered and can happen with or without a block, and for genuine safety concerns is not bound by the ordinary 30-day reportability window.
+- **Paused**: a self-service state that removes a person from all new matching immediately without ending an existing connection; the partner in that connection is told plainly and can end it immediately, without waiting.
+- **Restricted**: an automatic, provisional state triggered by a high or critical severity report, pending human review; blocks new matching and new outgoing messages everywhere, but does not itself end existing connections. Always resolves to either active or banned; never left standing.
+- **Meeting check-in**: a private, one-sided record of whether either person wants to meet again after marking "We met," never visible to the other party, with a separate branch for feeling unsafe that leads to Block, Report, and emergency resources rather than ordinary breakup language.
+- **Date plan**: a plan (location, time, expected end) a user shares through their own phone's share sheet, not through Focus; Focus never stores a third party's contact details.
+- **Focus now**: a self-service toggle that closes a person's remaining capacity slot on their own terms, without changing their capacity number. Capacity is a ceiling; this is intent.
+- **Focus Pick**: the single highest reciprocal-scoring candidate in a day's five, labeled as such; the other four are simply that day's introductions. Never accompanied by a percentage.
+- **Reciprocal score**: an internal, symmetric measure of how much two people's own stated soft preferences point toward each other, used only for ordering and for generating a plain-language explanation; never shown to a user as a number.
+- **Not for me / Don't show again / Block**: three different, non-overlapping ways a person can stop seeing someone. Not for me is an ordinary pass, never recycled automatically but possibly reconsidered much later if the person's profile changes materially. Don't show again is permanent and one-directional, for someone already known outside the app. Block is the safety action in section 2.4 and ends any active connection.
+- **Share Contact**: the only way personal contact information moves between two people on Focus: deliberate, one method at a time, never mutual by default, with an explicit warning shown first.
+- **aal2**: the Supabase Auth assurance level reached after a second factor (TOTP) is verified in the current session; required for all admin data access and actions.
+- **private schema**: the Postgres schema holding every function a client must never call directly, kept off the project's exposed-schema list so the Data API cannot route to it regardless of grants.
+- **Upload ticket**: an application-level row bounding a direct-to-storage upload to 5 minutes, independent of the underlying Supabase signed URL's own fixed 2-hour validity.
